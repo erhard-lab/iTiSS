@@ -24,7 +24,7 @@ iTiSS (integrated Transcriptional start site caller) is a method to identify tra
 
 ## Installation (Binary)
 
-- Download the .jar-file from the newest release (https://github.com/Chrizey91/GediTiSS/releases)
+- Download the .jar-file from the newest release (https://github.com/erhard-lab/GediTiSS/releases)
 - run with `java -cp iTiSS.jar -Xmx12g -Xms4g executables/TiSS [options]` (change Xmx and Xms as needed, 12Gb is recommended for big genomes like human. Smaller ones, like bacteria or even viruses only need a maximum of 1Gb or 2Gb)
 
 ## Usage
