@@ -132,7 +132,7 @@ If you use iTiSS, please cite the following paper:
 
 ## Testdata
 
-Testdata including example commands on how to run iTiSS on different TiSS-profiling datasets can be found on Zenodo ()
+Testdata including example commands on how to run iTiSS on different TiSS-profiling datasets can be found on [Zenodo](https://doi.org/10.5281/zenodo.3860525)
 
 ## Installation (from source)
 iTiSS is a submodule of the gedi toolkit (full gedi source: https://github.com/erhard-lab/gedi)
@@ -140,10 +140,10 @@ iTiSS is a submodule of the gedi toolkit (full gedi source: https://github.com/e
 - Clone or download the gedi toolkit and this repository
 - Add this repository as a module to the gedi toolkit
 - If you only want to use iTiSS, the following modules and dependencies are all you need:
-![needed modules](https://github.com/Chrizey91/GediTiSS/blob/master/readme/modulesNeeded.png "Modules needed from gedi")
-![needed modules](https://github.com/Chrizey91/GediTiSS/blob/master/readme/Dependencies.png "Modules needed from gedi")
+![needed modules](https://github.com/Chrizey91/GediTiSS/blob/master/imgs/modulesNeeded.png "Modules needed from gedi")
+![needed modules](https://github.com/Chrizey91/GediTiSS/blob/master/imgs/Dependencies.png "Modules needed from gedi")
 - Alter the Test and Output paths so that the executables are generated in the bin folder of each module. Example for cglib:
-![needed modules](https://github.com/Chrizey91/GediTiSS/blob/master/readme/OutputPathsNew.png "Modules needed from gedi")
+![needed modules](https://github.com/Chrizey91/GediTiSS/blob/master/imgs/OutputPathsNew.png "Modules needed from gedi")
 - Build the whole toolkit
 - add the `gedi`-bash file to you PATH
 
