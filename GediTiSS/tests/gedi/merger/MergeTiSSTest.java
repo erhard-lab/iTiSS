@@ -36,7 +36,7 @@ class MergeTiSSTest {
         MergeTiSS merger = new MergeTiSS(new TiSSMergerParameterSet());
 
         DependencyTree<Map<ReferenceSequence, List<Tsr>>> mapDependencyTree = merger.mergeAllTiss(inFiles, dependency,
-                prefix, pacbio, "", pbDelta, 0, "", null, true);
+                prefix, pacbio, "", pbDelta, 0, "", null, true, 5);
 
         Set<DependencyNode<Map<ReferenceSequence, List<Tsr>>>> leaves = mapDependencyTree.getLeaves();
 
@@ -91,7 +91,7 @@ class MergeTiSSTest {
         MergeTiSS merger = new MergeTiSS(new TiSSMergerParameterSet());
 
         DependencyTree<Map<ReferenceSequence, List<Tsr>>> mapDependencyTree = merger.mergeAllTiss(inFiles, dependency,
-                prefix, pacbio, "", pbDelta, 0, "", null, true);
+                prefix, pacbio, "", pbDelta, 0, "", null, true, 5);
 
         Set<DependencyNode<Map<ReferenceSequence, List<Tsr>>>> leaves = mapDependencyTree.getLeaves();
 
@@ -146,7 +146,7 @@ class MergeTiSSTest {
         MergeTiSS merger = new MergeTiSS(new TiSSMergerParameterSet());
 
         DependencyTree<Map<ReferenceSequence, List<Tsr>>> mapDependencyTree = merger.mergeAllTiss(inFiles, dependency,
-                prefix, pacbio, "", pbDelta, 0, "", null, true);
+                prefix, pacbio, "", pbDelta, 0, "", null, true, 5);
 
         Set<DependencyNode<Map<ReferenceSequence, List<Tsr>>>> leaves = mapDependencyTree.getLeaves();
 
@@ -197,7 +197,7 @@ class MergeTiSSTest {
         String prefix = this.getClass().getResource("/resources/tissmerger/").getPath() + "text/test";
 
         DependencyTree<Map<ReferenceSequence, List<Tsr>>> mapDependencyTree = merger.mergeAllTiss(inFiles, dependency,
-                prefix, pacbio, "", pbDelta, 0, "", null, true);
+                prefix, pacbio, "", pbDelta, 0, "", null, true, 5);
 
         Set<DependencyNode<Map<ReferenceSequence, List<Tsr>>>> leaves = mapDependencyTree.getLeaves();
 

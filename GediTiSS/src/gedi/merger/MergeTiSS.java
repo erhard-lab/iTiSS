@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.util.*;
 
 public class MergeTiSS extends GediProgram {
-    private static final int GAP = 5;
 
     public MergeTiSS(TiSSMergerParameterSet params) {
         addInput(params.inputFiles);
@@ -26,6 +25,7 @@ public class MergeTiSS extends GediProgram {
         addInput(params.pacbioDelta);
         addInput(params.minionDelta);
         addInput(params.priorityDatasets);
+        addInput(params.gapMerge);
 
         addOutput(params.outFile);
     }
@@ -40,9 +40,10 @@ public class MergeTiSS extends GediProgram {
         int pacbioDelta = getParameter(5);
         int minionDelta = getParameter(6);
         String priotiyDatasets = getParameter(7);
+        int gap = getParameter(8);
 
         DependencyTree<Map<ReferenceSequence, List<Tsr>>> tree = mergeAllTiss(inputFiles, dependencies, prefix,
-                pacbio, minion, pacbioDelta, minionDelta,priotiyDatasets, context, false);
+                pacbio, minion, pacbioDelta, minionDelta,priotiyDatasets, context, false, gap);
 
         int fileCount = 1;
         for (DependencyNode<Map<ReferenceSequence, List<Tsr>>> leaf : tree.getLeaves()) {
@@ -97,7 +98,7 @@ public class MergeTiSS extends GediProgram {
 
     public DependencyTree<Map<ReferenceSequence, List<Tsr>>> mergeAllTiss(List<String> inputFiles, String dependencies, String prefix, String pacbio,
                                                                           String minion, int pacbioDelta, int minionDelta, String priotiyDatasets,
-                                                                          GediProgramContext context, boolean isTest) throws IOException {
+                                                                          GediProgramContext context, boolean isTest, int gap) throws IOException {
         Set<Integer> pacbioIndices = extractIndices(pacbio);
         Set<Integer> minionIndices = extractIndices(minion);
         Set<Integer> prioritiesIndices = extractIndices(priotiyDatasets);
@@ -110,7 +111,7 @@ public class MergeTiSS extends GediProgram {
                 context.getLog().info("File: " + inputFiles.get(node.getId()) + ", ID: " + node.getId());
             }
 
-            Map<ReferenceSequence, List<Tsr>> tsrs = TiSSUtils.extractTsrsFromFile(inputFiles.get(node.getId()), 1, GAP, node.getId());
+            Map<ReferenceSequence, List<Tsr>> tsrs = TiSSUtils.extractTsrsFromFile(inputFiles.get(node.getId()), 1, gap, node.getId());
             for (ReferenceSequence ref : tsrs.keySet()) {
                 EI.wrap(tsrs.get(ref)).forEachRemaining(t -> {
                     if (pacbioIndices.size() > 0 && pacbioIndices.contains(node.getId())) {
@@ -133,7 +134,7 @@ public class MergeTiSS extends GediProgram {
         Set<DependencyNode<Map<ReferenceSequence, List<Tsr>>>> leaves = tree.getLeaves();
 
         for (DependencyNode<Map<ReferenceSequence, List<Tsr>>> mapDependencyNode : root) {
-            workNodes(mapDependencyNode);
+            workNodes(mapDependencyNode, gap);
         }
 
         if (!allLeavesChecked(leaves)) {
@@ -198,13 +199,13 @@ public class MergeTiSS extends GediProgram {
         return out;
     }
 
-    private void workNodes(DependencyNode<Map<ReferenceSequence, List<Tsr>>> node) {
+    private void workNodes(DependencyNode<Map<ReferenceSequence, List<Tsr>>> node, int gap) {
         if (node.isChecked()) {
             if (node.getOutNodes() == null) {
                 return;
             }
             for (DependencyNode<Map<ReferenceSequence, List<Tsr>>> outNode : node.getOutNodes()) {
-                workNodes(outNode);
+                workNodes(outNode, gap);
             }
             return;
         }
@@ -225,7 +226,7 @@ public class MergeTiSS extends GediProgram {
                     addDataToTsr(i, ref, oldDatas);
                     if (tissThresh != 1) {
                         i.removeTiss(tissThresh);
-                        List<Tsr> breakUp = i.breakUp(GAP);
+                        List<Tsr> breakUp = i.breakUp(gap);
                         breakUp.forEach(t -> {
                             if (t.getCalledBy().size() >= tsrThresh && !newData.get(ref).contains(t)) {
                                 newData.get(ref).add(t);
@@ -244,7 +245,7 @@ public class MergeTiSS extends GediProgram {
             return;
         }
         for (DependencyNode<Map<ReferenceSequence, List<Tsr>>> outNode : node.getOutNodes()) {
-            workNodes(outNode);
+            workNodes(outNode, gap);
         }
     }
 

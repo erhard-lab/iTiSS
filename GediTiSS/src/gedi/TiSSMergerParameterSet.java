@@ -25,4 +25,5 @@ public class TiSSMergerParameterSet extends GediParameterSet {
     public GediParameter<Integer> pacbioDelta = new GediParameter<Integer>(this,"pbDelta", "Amount of positions to consider left AND right from a pacbio read starting point", false, new IntParameterType(), 5, true);
     public GediParameter<Integer> minionDelta = new GediParameter<Integer>(this,"mionDelta", "Amount of positions to consider upstream ONLY from a minion read starting point", false, new IntParameterType(), 20, true);
     public GediParameter<String> priorityDatasets = new GediParameter<String>(this,"prio", "A string to identify priority datasets (for ex.: _xx__x -> files at index 1,2 and 5 are minion) underscore character (_) for skip. Those will be used to collapse successive tiss", false, new StringParameterType(), "", true);
+    public GediParameter<Integer> gapMerge = new GediParameter<Integer>(this,"gap", "The gaps between TiSS that should be merged into one", false, new IntParameterType(), 5, true);
 }
