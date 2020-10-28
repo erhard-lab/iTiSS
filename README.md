@@ -132,7 +132,7 @@ If you use iTiSS, please cite the following paper:
 
 ## Testdata
 
-Testdata including example commands on how to run iTiSS on different TiSS-profiling datasets can be found on [Zenodo](https://doi.org/10.5281/zenodo.3860525)
+Testdata including example commands on how to run iTiSS on different TiSS-profiling datasets can be found on [Zenodo](https://doi.org/10.5281/zenodo.3860525). This testdata includes mapped reads from six different TSS-profiling data sets (dRNA-seq, cRNA-seq, PROcap-seq, CAGE, RAMPAGE, STRIPE-seq), which can be found in the `mapping` folder. iTiSS can be found in the `programs/iTiSS` folder. The `start.bash` file in the same folder contains suggested executions of calling iTiSS to predict TSS in the respective data sets.
 
 ## Installation (from source)
 iTiSS is a submodule of the gedi toolkit (full gedi source: https://github.com/erhard-lab/gedi)
