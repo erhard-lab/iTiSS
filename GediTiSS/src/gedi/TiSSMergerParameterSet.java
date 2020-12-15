@@ -16,7 +16,7 @@ public class TiSSMergerParameterSet extends GediParameterSet {
     // General parameters
     public GediParameter<GenomicRegionStorage<AlignedReadsData>> reads = new GediParameter<GenomicRegionStorage<AlignedReadsData>>(this,"reads", "Read data in CIT-format.", true, new StorageParameterType<AlignedReadsData>());
     public GediParameter<String> inputFiles = new GediParameter<String>(this,"in", "input files", true, new StringParameterType());
-//    0:1x4x5>2  0=file at index 0, 1=file at index 1, 4=TSR-score threshold, 5=TiSS-score threshold (if omitted, only TSR-score is used), 2=output index used for next dependency
+//    0:1x4x5>2  0=file at index 0, 1=file at index 1, 4=TSR-totalDelta threshold, 5=TiSS-totalDelta threshold (if omitted, only TSR-totalDelta is used), 2=output index used for next dependency
     public GediParameter<String> dependencies = new GediParameter<String>(this,"dep", "0-based indexed. number at certain position depicts the dependency of this file to the one located at the given index", false, new StringParameterType());
     public GediParameter<File> outFile = new GediParameter<File>(this, "${prefix}.tsv", "The final output of merged peaks", false, new FileParameterType());
 

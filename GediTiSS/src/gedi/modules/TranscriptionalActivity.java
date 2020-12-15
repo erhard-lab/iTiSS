@@ -3,6 +3,7 @@ package gedi.modules;
 import gedi.core.reference.Chromosome;
 import gedi.core.reference.ReferenceSequence;
 import gedi.data.Data;
+import gedi.merger2.TissFile;
 import gedi.util.StringUtils;
 import gedi.util.datastructure.array.NumericArray;
 import gedi.util.dynamic.impl.DoubleDynamicObject;
@@ -11,6 +12,7 @@ import gedi.util.io.text.LineOrientedFile;
 import gedi.util.io.text.LineWriter;
 import gedi.util.math.stat.testing.FishersExact;
 import gedi.util.mutable.MutablePair;
+import gedi.util.mutable.MutableTriple;
 import gedi.util.r.RRunner;
 import gedi.utils.TiSSUtils;
 import gedi.utils.machineLearning.PeakAndPos;
@@ -40,7 +42,7 @@ public class TranscriptionalActivity extends ModuleBase {
             writerPath = prefix + "densityThresholdData.tsv";
             mlWriter = new LineOrientedFile(writerPath).write();
             try {
-                mlWriter.writeLine("Ref\tPos\tValue");
+                mlWriter.writeLine("Ref\tPos\tValue\tReadCount");
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -67,7 +69,7 @@ public class TranscriptionalActivity extends ModuleBase {
 
         Map<Integer, Map<String, Double>> foundPeaksNew = this.res.computeIfAbsent(ref, k -> new HashMap<>());
         List<Double> mmDatOut = this.allMmData.computeIfAbsent(ref, k-> new ArrayList<>());
-        List<MutablePair<Integer, Double>> posPVal = new ArrayList<>(data.length()/100);
+        List<MutableTriple<Integer, Double, Double>> posPVal = new ArrayList<>(data.length()/100);
 
         for (int i = windowSize; i < data.length() - (windowSize+1); i++) {
             if (useML && i%10000000 == 0) {
@@ -92,13 +94,14 @@ public class TranscriptionalActivity extends ModuleBase {
                     if (useML){
                         if(p <= 0.1 && d > b) {
                             Map<String, Double> info = new HashMap<>();
-                            posPVal.add(new MutablePair<>(i, p));
+                            posPVal.add(new MutableTriple<>(i, p, data.getDouble(i)));
 //                        info.put("pValue", p);
 //                        foundPeaksNew.put(i, info);
                         }
                     } else if (p <= significanceThresh && d > b) {
                         Map<String, Double> infos = new HashMap<>();
-                        infos.put("pValue", p);
+                        infos.put(TissFile.P_VALUE_COLUMN_NAME, p);
+                        infos.put(TissFile.READ_COUNT_COLUMN_NAME, data.getDouble(i));
                         foundPeaksNew.put(i, infos);
                     }
                 }
@@ -135,8 +138,8 @@ public class TranscriptionalActivity extends ModuleBase {
             }
         }
         try {
-            for (MutablePair<Integer, Double> tss : posPVal) {
-                mlWriter.writeLine(ref.toPlusMinusString() + "\t" + tss.Item1 + "\t" + tss.Item2);
+            for (MutableTriple<Integer, Double, Double> tss : posPVal) {
+                mlWriter.writeLine(ref.toPlusMinusString() + "\t" + tss.Item1 + "\t" + tss.Item2 + "\t" + tss.Item3);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -164,24 +167,12 @@ public class TranscriptionalActivity extends ModuleBase {
     @Override
     public void calculateMLResults(String prefix, boolean plot) throws IOException {
         mlWriter.close();
-//        LineWriter writerup = new LineOrientedFile(prefix + "densityThresholdData.tsv").write();
-//        writerup.writeLine("Ref\tPos\tValue");
-//
-//        List<PeakAndPos> mlData = new ArrayList<>();
-//        for (ReferenceSequence ref : refPosPVal.keySet()) {
-//            List<MutablePair<Integer, Double>> tss = refPosPVal.get(ref);
-//            for (MutablePair<Integer, Double> tssPos : tss) {
-//                mlData.add(new PeakAndPos(tssPos.Item1, 1-tssPos.Item2));
-//                writerup.writeLine(ref.toPlusMinusString() + "\t" + tssPos.Item1 + "\t" + tssPos.Item2);
-//            }
-//        }
-//        writerup.close();
-        Map<ReferenceSequence, List<MutablePair<Integer, Double>>> refPosPVal = new HashMap<>();
+        Map<ReferenceSequence, List<MutableTriple<Integer, Double, Double>>> refPosPVal = new HashMap<>();
         List<PeakAndPos> mlData = new ArrayList<>();
         EI.lines(writerPath).skip(1).forEachRemaining(l -> {
             String[] split = StringUtils.split(l, "\t");
             mlData.add(new PeakAndPos(Integer.parseInt(split[1]), 1.-Double.parseDouble(split[2])));
-            refPosPVal.computeIfAbsent(Chromosome.obtain(split[0]), absent->new ArrayList<>()).add(new MutablePair<>(Integer.parseInt(split[1]), Double.parseDouble(split[2])));
+            refPosPVal.computeIfAbsent(Chromosome.obtain(split[0]), absent->new ArrayList<>()).add(new MutableTriple<>(Integer.parseInt(split[1]), Double.parseDouble(split[2]), Double.parseDouble(split[3])));
         });
 
         int movingAverage = (int)(mlData.size()*0.2);
@@ -190,15 +181,16 @@ public class TranscriptionalActivity extends ModuleBase {
 
         for (ReferenceSequence ref : refPosPVal.keySet()) {
             Map<Integer, Map<String,Double>> filtered = new HashMap<>();
-            List<MutablePair<Integer, Double>> tss2val = refPosPVal.get(ref);
+            List<MutableTriple<Integer, Double, Double>> tss2val = refPosPVal.get(ref);
             if (cleanupThresh > 0) {
-                tss2val = TiSSUtils.cleanUpMultiValueDataPair(tss2val, cleanupThresh);
+                tss2val = TiSSUtils.cleanUpMultiValueDataTriple(tss2val, cleanupThresh);
             }
 
-            for (MutablePair<Integer, Double> tss : tss2val) {
+            for (MutableTriple<Integer, Double, Double> tss : tss2val) {
                 if (tss.Item2 < upThresh) {
                     Map<String, Double> info = new HashMap<>();
-                    info.put("pValue", tss.Item2);
+                    info.put(TissFile.P_VALUE_COLUMN_NAME, tss.Item2);
+                    info.put(TissFile.READ_COUNT_COLUMN_NAME, tss.Item3);
                     filtered.put(tss.Item1, info);
                 }
             }

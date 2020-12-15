@@ -9,6 +9,7 @@ import gedi.util.program.GediParameterSet;
 import gedi.util.program.parametertypes.*;
 import gedi.utils.AnalysisModuleType;
 import gedi.utils.AnalyzeType;
+import gedi.utils.ReadType;
 
 import java.io.File;
 
@@ -21,10 +22,12 @@ public class TiSSParameterSet extends GediParameterSet {
     public GediParameter<GenomicRegionStorage<AlignedReadsData>> reads = new GediParameter<GenomicRegionStorage<AlignedReadsData>>(this,"reads", "Read data in CIT-format.", true, new StorageParameterType<AlignedReadsData>());
     public GediParameter<Genomic> genomic = new GediParameter<Genomic>(this,"genomic", "The indexed GEDI genome.", true, new GenomicParameterType());
     public GediParameter<AnalysisModuleType> analyzeModuleType = new GediParameter<AnalysisModuleType>(this, "modType", "The type of analyzis [DENSITY, KINETIC, DENSE_PEAK, SPARSE_PEAK]", true, new EnumParameterType<>(AnalysisModuleType.class));
+    public GediParameter<ReadType> readType = new GediParameter<ReadType>(this, "readType", "How to count reads, three-prime not yet supported [FIVE_PRIME, DENSITY, THREE_PRIME]", false, new EnumParameterType<>(ReadType.class), ReadType.FIVE_PRIME, true);
     public GediParameter<Integer> wSize = new GediParameter<Integer>(this,"windowSize", "The size of the moving window", false, new IntParameterType(), 100, true);
     public GediParameter<Strandness> strandness = new GediParameter<Strandness>(this,"strandness", "Which strandness.", false, new EnumParameterType<>(Strandness.class), Strandness.Sense, true);
     public GediParameter<Double> pseudoCount = new GediParameter<Double>(this,"pseudo", "A pseudo count be added to each position", false, new DoubleParameterType(), 1., true);
     public GediParameter<Integer> cleanupThresh = new GediParameter<Integer>(this,"cleanupThresh", "Threshold at which multi-occurrences of a value will be filtered out", false, new IntParameterType(), 100, true);
+    public GediParameter<String> testChromosomes = new GediParameter<String>(this,"testChr", "The chromosomes to use (for testing purposes, individual chromosomes separated by comma, i.e. 1+,1-,...)", false, new StringParameterType(), true);
 
     // GenomicCreate
     public GediParameter<String> chromSizes = new GediParameter<String>(this,"chromSizes", "tsv file containing the sizes of each chromosome", true, new StringParameterType(), true);
@@ -33,12 +36,15 @@ public class TiSSParameterSet extends GediParameterSet {
     // dense_peak parameters
     public GediParameter<String> replicates = new GediParameter<String>(this,"rep", "A string to identify samples to combine (for ex.: XX_X -> combines read counts from sample 0, 1 and 3 with 2 being ignored) underscore character (_) for skip", false, new StringParameterType(), true);
     public GediParameter<String> timecourses = new GediParameter<String>(this,"timepoints", "A string to identify conditions (for ex.: 12_3 -> 3 conditions at index 0, 1 and 3, with 2 being ignored) underscore character (_) for skip", false, new StringParameterType(), "", true);
-    public GediParameter<Double> iqr = new GediParameter<Double>(this,"zscore", "z-score threshold to call a TiSS (not used if -autoparam is set)", false, new DoubleParameterType(), 5., true);
+    public GediParameter<Double> iqr = new GediParameter<Double>(this,"zscore", "z-totalDelta threshold to call a TiSS (not used if -autoparam is set)", false, new DoubleParameterType(), 5., true);
     public GediParameter<Double> pValThresh = new GediParameter<Double>(this,"pVal", "p-Value threshold to call a TiSS (not used if -autoparam is set)", false, new DoubleParameterType(), 0.0001, true);
     public GediParameter<Double> minReadDens = new GediParameter<Double>(this,"minReadDens", "The minimum read density to look for", false, new DoubleParameterType(), 0., true);
     public GediParameter<File> outIQR = new GediParameter<File>(this, "${prefix}.densePeak.tsv", "The final output of called peaks for the dense-peak analysis", false, new FileParameterType());
     public GediParameter<File> outTA = new GediParameter<File>(this, "${prefix}.density.tsv", "The final output of called TiSS for density-changes analysis", false, new FileParameterType());
     public GediParameter<File> outKA = new GediParameter<File>(this, "${prefix}.kinetic.tsv", "The final output of called TiSS for kinetic analysis", false, new FileParameterType());
+
+    // Kinetic
+    public GediParameter<Boolean> useUpAndDownstream = new GediParameter<Boolean>(this, "upAndDown", "[Kinetic] wrap window around TiSS instead of only upstream", false, new BooleanParameterType(), false, true);
 
     // parameter estimation
     public GediParameter<Boolean> useAutoparam = new GediParameter<Boolean>(this, "autoparam", "automatically set thresholds based on the data", false, new BooleanParameterType(), false, true);
@@ -47,6 +53,9 @@ public class TiSSParameterSet extends GediParameterSet {
     // sparse_peak parameters
     public GediParameter<Double> peakFCThreshold = new GediParameter<Double>(this,"peakFC", "The fold-change threshold for sparse peak algorithm (not used if -autoparam is set)", false, new DoubleParameterType(), 4., true);
     public GediParameter<File> outXRN1 = new GediParameter<File>(this, "${prefix}.sparsePeak.tsv", "The final output of called TiSS of the sparse_peak analysis", false, new FileParameterType());
+
+    // equal transcription parameters
+    public GediParameter<File> outEquTrans = new GediParameter<File>(this, "${prefix}.equalTranscription.tsv", "The final output of called TiSS of the equal_transcription analysis", false, new FileParameterType());
 
     // currently unused
     public GediParameter<Integer> peakProximityNumber = new GediParameter<Integer>(this,"proxPeak", "The window size for peaks to be seen in close proximity to the current peak", false, new IntParameterType(), 3, true);

@@ -2,12 +2,16 @@ package gedi.modules;
 
 import gedi.core.reference.ReferenceSequence;
 import gedi.data.Data;
+import gedi.merger2.TissFile;
+import gedi.merger2.TsrFile;
+import gedi.merger2.TsrFileMerger;
 import gedi.util.datastructure.array.NumericArray;
 import gedi.util.dynamic.impl.DoubleDynamicObject;
 import gedi.util.functions.EI;
 import gedi.util.io.text.LineOrientedFile;
 import gedi.util.io.text.LineWriter;
 import gedi.util.mutable.MutablePair;
+import gedi.util.mutable.MutableTriple;
 import gedi.util.r.RRunner;
 import gedi.utils.TiSSUtils;
 import gedi.utils.machineLearning.PeakAndPos;
@@ -60,7 +64,6 @@ public class CRnaModule extends ModuleBase{
         }
 
         Map<Integer, Map<String, Double>> foundPeaksNew = this.res.computeIfAbsent(ref, k -> new HashMap<>());
-        List<Double> mmDatOut = this.allMmData.computeIfAbsent(ref, k-> new ArrayList<>());
 
         double sumUpstream = sum(windowUpstream);
         double sumDownstream = sum(windowDownstream);
@@ -82,23 +85,20 @@ public class CRnaModule extends ModuleBase{
                 sdDownsteam = pseudoCount;
             }
 
-            NormalDistribution normUpstream = new NormalDistribution(null, meanUpstream, sdUpsteam);
-            NormalDistribution normDownstream = new NormalDistribution(null, meanDownstream, sdDownsteam);
-
             double upstreamZ = (valueOfInterest - meanUpstream) / sdUpsteam;
             double downstreamZ = (valueOfInterest - meanDownstream) / sdDownsteam;
-            if (useMM) {
-//                if (pUpstream < 0.01 && pDownstream < 0.01) {
+            if (useMM && mmDataL != null) {
                 if (upstreamZ > 2.5 && downstreamZ > 2.5) {
                     mmDataL.add(new PeakAndPos(i, upstreamZ));
                     mmDataR.add(new PeakAndPos(i, downstreamZ));
                 }
             } else {
-//                if (pUpstream < zScoreThresh && pDownstream < zScoreThresh) {
                 if (upstreamZ > zScoreThresh && downstreamZ > zScoreThresh) {
                     Map<String, Double> infos = new HashMap<>();
                     infos.put("zScore-US", upstreamZ);
                     infos.put("zScore-DS", downstreamZ);
+                    infos.put(TissFile.Z_SCORE_COLUMN_NAME, upstreamZ);
+                    infos.put(TissFile.READ_COUNT_COLUMN_NAME, data.getDouble(i));
                     foundPeaksNew.put(i, infos);
                 }
             }
@@ -120,17 +120,15 @@ public class CRnaModule extends ModuleBase{
         }
 
         if (mmDataL != null) {
-//            mmDatOut.addAll(mmDataC.stream().map(PeakAndPos::getValue).collect(Collectors.toList()));
             for (int i = 0; i < mmDataL.size(); i++) {
                 Map<String, Double> info = new HashMap<>();
                 info.put("zScore-US", mmDataL.get(i).getValue());
                 info.put("zScore-DS", mmDataR.get(i).getValue());
+                info.put(TissFile.Z_SCORE_COLUMN_NAME, mmDataL.get(i).getValue());
+                info.put(TissFile.READ_COUNT_COLUMN_NAME, data.getDouble(mmDataL.get(i).getPos()));
                 foundPeaksNew.put(mmDataL.get(i).getPos(), info);
             }
         }
-
-//        System.err.println("Finished searching for peaks in the DENSE_PEAK module.");
-//        System.err.println("Found peaks: " + foundPeaks.size());
     }
 
     private double sum(StaticSizeSortedArrayList<Double> lst) {
@@ -175,13 +173,21 @@ public class CRnaModule extends ModuleBase{
             Map<Integer, Map<String,Double>> filtered = new HashMap<>();
             Map<Integer, Map<String, Double>> tss2val = res.get(ref);
             if (cleanupThresh > 0) {
-                List<MutablePair<Integer, Double>> upstream = EI.wrap(res.get(ref).keySet()).map(t -> new MutablePair<>(t, res.get(ref).get(t).get("zScore-US"))).list();
-                List<MutablePair<Integer, Double>> downstream = EI.wrap(res.get(ref).keySet()).map(t -> new MutablePair<>(t, res.get(ref).get(t).get("zScore-DS"))).list();
-                upstream = TiSSUtils.cleanUpMultiValueDataPair(upstream, cleanupThresh);
-                downstream = TiSSUtils.cleanUpMultiValueDataPair(downstream, cleanupThresh);
+                List<MutableTriple<Integer, Double, Double>> upstream = EI.wrap(res.get(ref).keySet()).map(t -> new MutableTriple<>(t, res.get(ref).get(t).get("zScore-US"), res.get(ref).get(t).get(TissFile.READ_COUNT_COLUMN_NAME))).list();
+                List<MutableTriple<Integer, Double, Double>> downstream = EI.wrap(res.get(ref).keySet()).map(t -> new MutableTriple<>(t, res.get(ref).get(t).get("zScore-DS"), res.get(ref).get(t).get(TissFile.READ_COUNT_COLUMN_NAME))).list();
+                upstream = TiSSUtils.cleanUpMultiValueDataTriple(upstream, cleanupThresh);
+                downstream = TiSSUtils.cleanUpMultiValueDataTriple(downstream, cleanupThresh);
                 Map<Integer,Map<String,Double>> tss2valFiltered = new HashMap<>();
-                EI.wrap(upstream).forEachRemaining(u -> tss2valFiltered.computeIfAbsent(u.Item1, absent->new HashMap<>()).put("zScore-US", u.Item2));
-                EI.wrap(downstream).forEachRemaining(u -> tss2valFiltered.computeIfAbsent(u.Item1, absent->new HashMap<>()).put("zScore-DS", u.Item2));
+                EI.wrap(upstream).forEachRemaining(u -> {
+                    Map<String, Double> map = tss2valFiltered.computeIfAbsent(u.Item1, absent -> new HashMap<>());
+                    map.put("zScore-US", u.Item2);
+                    map.put(TissFile.Z_SCORE_COLUMN_NAME, u.Item2);
+                    map.put(TissFile.READ_COUNT_COLUMN_NAME, u.Item3);
+                });
+                EI.wrap(downstream).forEachRemaining(u -> {
+                    Map<String, Double> map = tss2valFiltered.computeIfAbsent(u.Item1, absent -> new HashMap<>());
+                    map.put("zScore-DS", u.Item2);
+                });
                 tss2val = tss2valFiltered;
             }
             for (int tss : tss2val.keySet()) {

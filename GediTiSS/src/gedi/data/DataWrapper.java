@@ -10,7 +10,9 @@ import gedi.core.region.GenomicRegionStorage;
 import gedi.riboseq.utils.RiboUtils;
 import gedi.util.datastructure.array.NumericArray;
 import gedi.util.functions.EI;
+import gedi.utils.ReadType;
 import gedi.utils.TiSSUtils;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.util.*;
 
@@ -34,6 +36,8 @@ public class DataWrapper {
 
     private List<GenomicRegionStorage<AlignedReadsData>> rawData;
     private Strandness strandness;
+    private ReadType readType;
+    private Set<ReferenceSequence> testChr;
 
     private Map<Set<Integer>, Map<ReferenceSequence, MemoryReadCount>> memoryMap;
 
@@ -42,19 +46,32 @@ public class DataWrapper {
     private long vmMemory = Runtime.getRuntime().maxMemory();
     private long currentlyUsedVmMemory = GB;
 
-    public DataWrapper(List<GenomicRegionStorage<AlignedReadsData>> rawData, Strandness strandness) {
+    private Set<ReferenceSequence> loadedChromosomes;
+
+    public DataWrapper(List<GenomicRegionStorage<AlignedReadsData>> rawData, Strandness strandness, ReadType readType, Set<ReferenceSequence> testChr) {
         this.rawData = rawData;
         this.strandness = strandness;
+        this.readType = readType;
+        this.testChr = testChr;
+    }
+
+    public DataWrapper(List<GenomicRegionStorage<AlignedReadsData>> rawData, Strandness strandness) {
+        this(rawData, strandness, ReadType.FIVE_PRIME, null);
     }
 
     public void initData(Genomic genomic, List<Data> lanes) {
         memoryMap = new HashMap<>();
         Map<Set<Integer>, Integer> accessCounts = calculateAccessCounts(lanes);
+        loadedChromosomes = new HashSet<>();
 
         for (Set<Integer> key : accessCounts.keySet()) {
             Map<ReferenceSequence, MemoryReadCount> refMemoryMap = new HashMap<>();
             boolean multi = hasMulti(lanes, key);
             genomic.iterateReferenceSequences().forEachRemaining(r -> {
+                if (testChr != null && !testChr.contains(r)) {
+                    return;
+                }
+                loadedChromosomes.add(r);
                 refMemoryMap.put(r, new MemoryReadCount(accessCounts.get(key), multi));
             });
             memoryMap.put(key, refMemoryMap);
@@ -162,10 +179,18 @@ public class DataWrapper {
         Set<Integer> laneList = EI.wrap(data.getLane()).set();
         MemoryReadCount memoryReadCount = memoryMap.get(laneList).get(ref);
         if (!memoryReadCount.isInMemory()) {
-            if (memoryReadCount.isMulti()) {
-                memoryReadCount.setReadCount(loadMultiReadCountToMemory(data.getLane(), ref, refLength));
+            if (readType == ReadType.DENSITY) {
+                if (memoryReadCount.isMulti()) {
+                    throw new NotImplementedException();
+                } else {
+                    memoryReadCount.setReadCount(new NumericArray[] {TiSSUtils.extractReadDensities(rawData, data.getLane(), ref, refLength, strandness)});
+                }
             } else {
-                memoryReadCount.setReadCount(new NumericArray[] {TiSSUtils.extractFivePrimeCounts(rawData, data.getLane(), ref, refLength, strandness)});
+                if (memoryReadCount.isMulti()) {
+                    memoryReadCount.setReadCount(loadMultiReadCountToMemory(data.getLane(), ref, refLength));
+                } else {
+                    memoryReadCount.setReadCount(new NumericArray[]{TiSSUtils.extractCounts(rawData, data.getLane(), ref, refLength, strandness, readType)});
+                }
             }
             memoryReadCountAccessionOrder.add(memoryReadCount);
             addUsedMemory(memoryReadCount.getByteSize());
@@ -178,7 +203,7 @@ public class DataWrapper {
         long byteSize = memoryReadCount.getByteSize();
         memoryReadCount.finishAccess();
         if (memoryReadCount.getByteSize() == 0) {
-//            printMemoryUsage(-byteSize);
+            printMemoryUsage(-byteSize);
             currentlyUsedVmMemory -= byteSize;
         }
     }
@@ -202,9 +227,10 @@ public class DataWrapper {
         for (int i = 0; i < readCounts.length; i++) {
             readCounts[i] = NumericArray.createMemory(refLength, NumericArray.NumericArrayType.Float);
         }
+        final boolean switchFiveAndThreePrimeEnd = strandness == Strandness.Antisense && readType == ReadType.FIVE_PRIME || strandness == Strandness.Sense && readType == ReadType.THREE_PRIME;
         cit.ei(strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref).forEachRemaining(r -> {
-            int pos0 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
-            int pos1 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
+            int pos0 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
+            int pos1 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
             NumericArray c0 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
             NumericArray c1 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
             for (int k = 0; k < r.getData().getDistinctSequences(); k++) {
@@ -218,14 +244,14 @@ public class DataWrapper {
             if (c0.length() > 0) {
                 int index = 0;
                 for (int i : citAccessIndeces) {
-                    readCounts[index].setDouble(pos0, readCounts[index].getDouble(pos0) + c0.getDouble(i));
+                    readCounts[index].setFloat(pos0, readCounts[index].getFloat(pos0) + c0.getFloat(i));
                     index++;
                 }
             }
             if (c1.length() > 0) {
                 int index = 0;
                 for (int i : citAccessIndeces) {
-                    readCounts[index].setDouble(pos1, readCounts[index].getDouble(pos1) + c1.getDouble(i));
+                    readCounts[index].setFloat(pos1, readCounts[index].getFloat(pos1) + c1.getFloat(i));
                     index++;
                 }
             }
@@ -257,25 +283,6 @@ public class DataWrapper {
         return totalizedReadCounts;
     }
 
-    // TODO: the integers need to be in order to assure the correct data access. use {@code getCitIndexAccessListNew}
-    @Deprecated
-    private Map<Integer, List<Integer>> getCitIndexAccessList(int[] lane) {
-        int condSum = 0;
-        Map<Integer, List<Integer>> citIndexAccessList = new HashMap<>();
-        for (int i = 0; i < rawData.size(); i++) {
-            int condNum = rawData.get(i).getMetaDataConditions().length + condSum;
-            List<Integer> indexAccessList = new ArrayList<>();
-            for (int l : lane) {
-                if (l < condNum && l >= condSum) {
-                    indexAccessList.add(l - condSum);
-                }
-            }
-            citIndexAccessList.put(i, indexAccessList);
-            condSum = condNum;
-        }
-        return citIndexAccessList;
-    }
-
     private CitAccessInfo getCitIndexAccessListNew(int[] lane) {
         CitAccessInfo citAccessInfo = new CitAccessInfo();
         for (int l : lane) {
@@ -290,5 +297,9 @@ public class DataWrapper {
             }
         }
         return citAccessInfo;
+    }
+
+    public Set<ReferenceSequence> getLoadedChromosomes() {
+        return new HashSet<>(loadedChromosomes);
     }
 }

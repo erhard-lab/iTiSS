@@ -1,5 +1,6 @@
 package gedi.utils;
 
+import cern.colt.function.DoubleComparator;
 import cern.colt.function.FloatComparator;
 import com.sun.deploy.util.ArrayUtil;
 import gedi.util.ArrayUtils;
@@ -9,6 +10,7 @@ import org.junit.Assert;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 class TiSSUtilsTest {
@@ -171,5 +173,18 @@ class TiSSUtilsTest {
         Assert.assertEquals(new Integer(10), outLst1_2.get(2).get(0));
         Assert.assertEquals(new Integer(20), outLst1_1.get(4).get(0));
         Assert.assertEquals(new Integer(20), outLst1_2.get(3).get(0));
+    }
+
+    @Test
+    void testGetOrder() {
+        double[] ary1 = new double[] {2,4,3,2,5,63,3,3,2};
+        int[] solution = new int[] {0,3,8,2,6,7,1,4,5};
+        int[] test = TiSSUtils.getOrder(ary1, Comparator.comparingDouble(d -> d));
+        Assert.assertArrayEquals(solution, test);
+
+        double[] ary2 = new double[] {2,4,3,2,5,63,3,3,2};
+        int[] solution2 = new int[] {5,4,1,2,6,7,0,3,8};
+        int[] test2 = TiSSUtils.getOrder(ary2, Comparator.comparingDouble(d -> -d));
+        Assert.assertArrayEquals(solution2, test2);
     }
 }

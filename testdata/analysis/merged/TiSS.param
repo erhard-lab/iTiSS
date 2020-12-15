@@ -1,0 +1,14 @@
+prefix	analysis/merged/TiSS
+inTiss	
+gap	10
+ext	10
+minScore	1
+inTsr	analysis/merged/drnaseq.tsr,analysis/merged/crnaseq.tsr
+keepFileIds	false
+progress	false
+D	false
+h	false
+hh	false
+hhh	false
+dry	false
+keep	false

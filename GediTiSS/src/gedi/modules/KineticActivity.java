@@ -3,6 +3,7 @@ package gedi.modules;
 import gedi.core.reference.Chromosome;
 import gedi.core.reference.ReferenceSequence;
 import gedi.data.Data;
+import gedi.merger2.TissFile;
 import gedi.util.ArrayUtils;
 import gedi.util.StringUtils;
 import gedi.util.datastructure.array.NumericArray;
@@ -13,7 +14,9 @@ import gedi.util.io.text.LineOrientedFile;
 import gedi.util.io.text.LineWriter;
 import gedi.util.math.stat.testing.DirichletLikelihoodRatioTest;
 import gedi.util.mutable.MutablePair;
+import gedi.util.mutable.MutableTriple;
 import gedi.util.r.RRunner;
+import gedi.utils.ArrayUtils2;
 import gedi.utils.TiSSUtils;
 import gedi.utils.machineLearning.PeakAndPos;
 
@@ -26,21 +29,23 @@ public class KineticActivity extends ModuleBase {
     private double pseudoCount;
     private boolean useML;
     private int cleanupThresh;
+    private boolean useUpAndDownstream;
     private String writerPath;
     private LineWriter mlWriter;
 
-    public KineticActivity(int windowSize, double significanceThresh, double pseudoCount, int cleanupThresh, boolean useML, String prefix, Data lane, String name) {
+    public KineticActivity(int windowSize, double significanceThresh, double pseudoCount, int cleanupThresh, boolean useML, boolean useUpAndDownstream, String prefix, Data lane, String name) {
         super(name, lane);
         this.windowSize = windowSize;
         this.significanceThresh = significanceThresh;
         this.pseudoCount = pseudoCount;
         this.useML = useML;
         this.cleanupThresh = cleanupThresh;
+        this.useUpAndDownstream = useUpAndDownstream;
         if (useML) {
             writerPath = prefix + "kineticThresholdData.tsv";
             mlWriter = new LineOrientedFile(writerPath).write();
             try {
-                mlWriter.writeLine("Ref\tPos\tValue");
+                mlWriter.writeLine("Ref\tPos\tValue\tReadCount");
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -52,11 +57,15 @@ public class KineticActivity extends ModuleBase {
     public void findTiSS(NumericArray[] data, ReferenceSequence ref) {
         // data contains the timeseries in ascending order
         Map<Integer, Map<String, Double>> foundPeaksNew = this.res.computeIfAbsent(ref, k -> new HashMap<>());
-        List<MutablePair<Integer, Double>> posPVal = new ArrayList<>(data[0].length()/100);
+        List<MutableTriple<Integer, Double, Double>> posPVal = new ArrayList<>(data[0].length()/100);
 
         double[] windowSum = sum(data, 0, windowSize);
         if (ref.isMinus()) {
             windowSum = sum(data, windowSize+1, windowSize*2+1);
+        }
+        if (useUpAndDownstream) {
+            windowSum = sum(data, 0, windowSize*2+1);
+            ArrayUtils2.subtract(windowSum, sum(data, windowSize, windowSize+1));
         }
         for (int i = windowSize; i < data[0].length()-(windowSize+1); i++) {
             if (useML && i%10000000 == 0) {
@@ -68,34 +77,34 @@ public class KineticActivity extends ModuleBase {
             }
             double[] windowMeans = new double[windowSum.length];
             for (int j = 0; j < windowSum.length; j++) {
-                windowMeans[j] = windowSum[j]/(windowSize);
+                windowMeans[j] = windowSum[j]/(useUpAndDownstream ? windowSize*2 : windowSize);
             }
             double p = DirichletLikelihoodRatioTest.testMultinomials(pseudoCount, windowMeans, peaks);
             if (useML) {
-                if (p < 0.5) {
+                if (p < 0.1) {
 //                Map<String, Double> info = new HashMap<>();
 //                info.put("pValue", p);
 //                foundPeaksNew.put(i, info);
-                    posPVal.add(new MutablePair<>(i, p));
+                    posPVal.add(new MutableTriple<>(i, p, ArrayUtils.max(peaks)));
                 }
             } else if (p <= significanceThresh) {
                 Map<String,Double> infos = new HashMap<>();
-                infos.put("pValue", p);
-
+                infos.put(TissFile.P_VALUE_COLUMN_NAME, p);
+                infos.put(TissFile.READ_COUNT_COLUMN_NAME, ArrayUtils.max(peaks));
                 foundPeaksNew.put(i, infos);
             }
 
             for (int j = 0; j < windowSum.length; j++) {
-                double subtract = ref.isPlus() ? data[j].getDouble(i-windowSize) : data[j].getDouble(i+1);
-                double add = ref.isPlus() ? data[j].getDouble(i) : data[j].getDouble(i+windowSize+1);
+                double subtract = ref.isPlus() || useUpAndDownstream ? data[j].getDouble(i-windowSize) : data[j].getDouble(i+1);
+                double add = ref.isPlus() && !useUpAndDownstream ? data[j].getDouble(i) : data[j].getDouble(i+windowSize+1);
                 windowSum[j] -= subtract;
                 windowSum[j] += add;
             }
         }
 
         try {
-            for (MutablePair<Integer, Double> tss : posPVal) {
-                mlWriter.writeLine(ref.toPlusMinusString() + "\t" + tss.Item1 + "\t" + tss.Item2);
+            for (MutableTriple<Integer, Double, Double> tss : posPVal) {
+                mlWriter.writeLine(ref.toPlusMinusString() + "\t" + tss.Item1 + "\t" + tss.Item2 + "\t" + tss.Item3);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -121,12 +130,12 @@ public class KineticActivity extends ModuleBase {
     @Override
     public void calculateMLResults(String prefix, boolean plot) throws IOException {
         mlWriter.close();
-        Map<ReferenceSequence, List<MutablePair<Integer, Double>>> refPosPVal = new HashMap<>();
+        Map<ReferenceSequence, List<MutableTriple<Integer, Double, Double>>> refPosPVal = new HashMap<>();
         List<PeakAndPos> mlData = new ArrayList<>();
         EI.lines(writerPath).skip(1).forEachRemaining(l -> {
             String[] split = StringUtils.split(l, "\t");
             mlData.add(new PeakAndPos(Integer.parseInt(split[1]), 1.-Double.parseDouble(split[2])));
-            refPosPVal.computeIfAbsent(Chromosome.obtain(split[0]), absent->new ArrayList<>()).add(new MutablePair<>(Integer.parseInt(split[1]), Double.parseDouble(split[2])));
+            refPosPVal.computeIfAbsent(Chromosome.obtain(split[0]), absent->new ArrayList<>()).add(new MutableTriple<>(Integer.parseInt(split[1]), Double.parseDouble(split[2]), Double.parseDouble(split[3])));
         });
         int movingAverage = (int)(mlData.size()*0.2);
         double upThresh = TiSSUtils.calculateThreshold(mlData, movingAverage);
@@ -134,15 +143,16 @@ public class KineticActivity extends ModuleBase {
 
         for (ReferenceSequence ref : refPosPVal.keySet()) {
             Map<Integer, Map<String,Double>> filtered = new HashMap<>();
-            List<MutablePair<Integer, Double>> tss2val = refPosPVal.get(ref);
+            List<MutableTriple<Integer, Double, Double>> tss2val = refPosPVal.get(ref);
             if (cleanupThresh > 0) {
-                tss2val = TiSSUtils.cleanUpMultiValueDataPair(tss2val, cleanupThresh);
+                tss2val = TiSSUtils.cleanUpMultiValueDataTriple(tss2val, cleanupThresh);
             }
 
-            for (MutablePair<Integer, Double> tss : tss2val) {
+            for (MutableTriple<Integer, Double, Double> tss : tss2val) {
                 if (tss.Item2 < upThresh) {
                     Map<String, Double> info = new HashMap<>();
-                    info.put("pValue", tss.Item2);
+                    info.put(TissFile.P_VALUE_COLUMN_NAME, tss.Item2);
+                    info.put(TissFile.READ_COUNT_COLUMN_NAME, tss.Item3);
                     filtered.put(tss.Item1, info);
                 }
             }

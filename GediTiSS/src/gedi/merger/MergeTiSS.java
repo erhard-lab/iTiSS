@@ -250,6 +250,7 @@ public class MergeTiSS extends GediProgram {
     }
 
     private void addDataToTsr(Tsr value, ReferenceSequence lookUpRef, List<Map<ReferenceSequence, List<Tsr>>> data) {
+        Tiss ts = value.getSingleMaxTiSS();
         for (Map<ReferenceSequence, List<Tsr>> tsrMap : data) {
             List<Tsr> tsrs = tsrMap.get(lookUpRef);
             if (tsrs == null) {

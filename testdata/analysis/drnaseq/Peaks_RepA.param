@@ -1,0 +1,28 @@
+chromSizes	HSV1.chrom.sizes
+bams	data/dRNAseq/dRNA_repA.8hpi.bam
+reads	
+genomic	
+windowSize	100
+zscore	5.0
+minReadDens	0.0
+rep	X
+pseudo	1.0
+peakFC	4.0
+timepoints	
+strandness	Sense
+autoparam	true
+plotParams	true
+modType	SPARSE_PEAK
+pVal	1.0E-4
+cleanupThresh	100
+testChr	null
+readType	FIVE_PRIME
+upAndDown	false
+prefix	analysis/drnaseq/Peaks_RepA
+progress	false
+D	false
+h	false
+hh	false
+hhh	false
+dry	false
+keep	false

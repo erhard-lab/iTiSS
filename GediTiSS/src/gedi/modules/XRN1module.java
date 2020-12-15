@@ -70,7 +70,7 @@ public class XRN1module extends ModuleBase {
                     mmData.add(new PeakAndPos(i, log2(xrn1.getDouble(i)/thresholdPeak.getValue())));
                 }
             }
-//            if (i == 195974 && !ref.isPlus()) {
+//            if (i == 195974 && !ref.isSense()) {
 //                for (int j = i-20; j < i+20; j++) {
 //                    System.err.println("Pos: " + j + ", Height: " + xrn1.getDouble(j));
 //                }

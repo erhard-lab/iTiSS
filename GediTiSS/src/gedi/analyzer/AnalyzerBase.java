@@ -77,13 +77,16 @@ public abstract class AnalyzerBase{
         ModuleBase module = modules.get(0);
         writer.write("Reference (Strand)\tPosition");
         if (module.getResultsNew().keySet().size() > 0) {
-            ReferenceSequence ref = module.getResultsNew().keySet().iterator().next();
+            // TODO: This can be null if no TiSS were found (in that case however, there are other problems with the dataset...)
+            ReferenceSequence ref = EI.wrap(module.getResultsNew().keySet()).filter(k -> module.getResultsNew().get(k).keySet().size() > 0).next();
             for (ModuleBase mod : modules) {
-                if (mod.getResultsNew().get(ref).keySet().size() > 0) {
-                    Integer pos = mod.getResultsNew().get(ref).keySet().iterator().next();
-                    Set<String> headers = mod.getResultsNew().get(ref).get(pos).keySet();
-                    for (String header : headers) {
-                        writer.write("\t" + header);
+                if (mod.getResultsNew().get(ref) != null) {
+                    if (mod.getResultsNew().get(ref).keySet().size() > 0) {
+                        Integer pos = mod.getResultsNew().get(ref).keySet().iterator().next();
+                        Set<String> headers = mod.getResultsNew().get(ref).get(pos).keySet();
+                        for (String header : headers) {
+                            writer.write("\t" + header);
+                        }
                     }
                 }
             }

@@ -26,7 +26,7 @@ public class ModuleScheduler implements RunnableFinishedListener {
 //        System.err.println("ModuleScheduler created with " + modules.size() + " modules.");
         this.dataWrapper = dataWrapper;
         this.genomic = genomic;
-        this.refs = genomic.iterateReferenceSequences().toArray(new ReferenceSequence[0]);
+        this.refs = EI.wrap(dataWrapper.getLoadedChromosomes()).toArray(new ReferenceSequence[0]);
 //        this.moduleLanes = EI.wrap(modules).next().getLane();
         this.moduleLanes = EI.wrap(modules).toMap(new HashMap<ModuleBase, Data>(), m -> m, ModuleBase::getLane);
         this.moduleAccessionListManager = new ModuleAccessionListManager(modules, refs.length);
@@ -66,7 +66,7 @@ public class ModuleScheduler implements RunnableFinishedListener {
 
     private void run(ModuleBase module) {
         if (moduleAccessionListManager.allFinished(module)) {
-//            System.err.println(module.getModuleName() + " finished all its analysis.");
+            System.err.println(module.getModuleName() + " finished all its analysis.");
             return;
         }
         int nextAccess = moduleAccessionListManager.accessNextFree(module);
@@ -86,14 +86,14 @@ public class ModuleScheduler implements RunnableFinishedListener {
     public void notifyRunnableFinished(Runnable runnable) {
         if (runnable instanceof ModuleRunnable) {
             ModuleRunnable moduleRunnable = (ModuleRunnable) runnable;
-//            System.err.println("[" + Thread.currentThread().getName() + "] " + moduleRunnable.getModule().getModuleName() + " finished for: " + refs[moduleRunnable.getAccess()].toPlusMinusString());
+            System.err.println("[" + Thread.currentThread().getName() + "] " + moduleRunnable.getModule().getModuleName() + " finished for: " + refs[moduleRunnable.getAccess()].toPlusMinusString());
             dataWrapper.finishAccessingData(moduleLanes.get(moduleRunnable.getModule()), refs[moduleRunnable.getAccess()]);
-//            System.err.println("[" + Thread.currentThread().getName() + "] " + moduleRunnable.getModule().getModuleName() + " released data for: " + refs[moduleRunnable.getAccess()].toPlusMinusString());
+            System.err.println("[" + Thread.currentThread().getName() + "] " + moduleRunnable.getModule().getModuleName() + " released data for: " + refs[moduleRunnable.getAccess()].toPlusMinusString());
             moduleAccessionListManager.finishAccess(moduleRunnable.getModule(), moduleRunnable.getAccess());
             run(moduleRunnable.getModule());
         } else if (runnable instanceof ModuleWaiting) {
             ModuleWaiting moduleWaiting = (ModuleWaiting) runnable;
-//            System.err.print("[" + Thread.currentThread().getName() + "] " + moduleWaiting.getModule().getModuleName() + ": Waiting thread finished waiting.\r");
+            System.err.print("[" + Thread.currentThread().getName() + "] " + moduleWaiting.getModule().getModuleName() + ": Waiting thread finished waiting.\r");
             ModuleBase module = moduleWaiting.getModule();
             run(module);
          } else {

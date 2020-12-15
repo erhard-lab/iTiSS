@@ -3,19 +3,25 @@ package gedi;
 import gedi.analyzer.AnalyzeCustom;
 import gedi.core.data.reads.AlignedReadsData;
 import gedi.core.genomic.Genomic;
+import gedi.core.reference.Chromosome;
+import gedi.core.reference.ReferenceSequence;
 import gedi.core.reference.Strandness;
 import gedi.core.region.GenomicRegionStorage;
 import gedi.data.Data;
 import gedi.data.DataWrapper;
 import gedi.modules.*;
+import gedi.util.StringUtils;
 import gedi.util.io.text.LineOrientedFile;
 import gedi.util.program.GediProgram;
 import gedi.util.program.GediProgramContext;
 import gedi.utils.AnalysisModuleType;
+import gedi.utils.ReadType;
 import gedi.utils.TiSSUtils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class TiSSController extends GediProgram {
     private final char SKIP_CHAR = '_';
@@ -36,6 +42,9 @@ public class TiSSController extends GediProgram {
         addInput(params.analyzeModuleType);
         addInput(params.pValThresh);
         addInput(params.cleanupThresh);
+        addInput(params.testChromosomes);
+        addInput(params.readType);
+        addInput(params.useUpAndDownstream);
 
         addInput(params.prefix);
 
@@ -43,6 +52,7 @@ public class TiSSController extends GediProgram {
         addOutput(params.outTA);
         addOutput(params.outKA);
         addOutput(params.outXRN1);
+        addOutput(params.outEquTrans);
     }
 
     @Override
@@ -62,14 +72,29 @@ public class TiSSController extends GediProgram {
         List<AnalysisModuleType> modTypes = getParameters(12);
         double pValThresh = getParameter(13);
         int cleanupThresh = getParameter(14);
+        String testChromosomes = getParameter(15);
+        ReadType readType = getParameter(16);
+        boolean useUpAndDownstream = getParameter(17);
 
-        String prefix = getParameter(15);
+        String prefix = getParameter(18);
 
         final boolean useMultiCourse = timecourses != null && !timecourses.isEmpty();
 
         int[][] reps = TiSSUtils.extractReplicatesFromString(replicates, SKIP_CHAR);
 
-        DataWrapper dataWrapper = new DataWrapper(reads, strandness);
+        Set<ReferenceSequence> testChrs = new HashSet<>();
+        if (testChromosomes != null && !testChromosomes.isEmpty()) {
+            for (String r : StringUtils.split(testChromosomes, ",")) {
+                if (r != null && !r.isEmpty()) {
+                    testChrs.add(Chromosome.obtain(r));
+                }
+            }
+        }
+        if (testChrs.size() == 0) {
+            testChrs = null;
+        }
+
+        DataWrapper dataWrapper = new DataWrapper(reads, strandness, readType, testChrs);
         List<Data> data = new ArrayList<>();
         List<Data> singleLanes = new ArrayList<>(reps.length);
         List<Data> multiLanes = new ArrayList<>(reps.length);
@@ -99,7 +124,7 @@ public class TiSSController extends GediProgram {
                     break;
                 case KINETIC:
                     context.getLog().info("Adding Kinetic module");
-                    multiLanes.forEach(d -> analyzer.addModule(new KineticActivity(windowSize, pValThresh, pseudoCount, cleanupThresh, useMM, prefix, d, "KINETIC")));
+                    multiLanes.forEach(d -> analyzer.addModule(new KineticActivity(windowSize, pValThresh, pseudoCount, cleanupThresh, useMM, useUpAndDownstream, prefix, d, "KINETIC")));
                     break;
                 case SPARSE_PEAK:
                     context.getLog().info("Adding sparse peak module");
@@ -108,6 +133,10 @@ public class TiSSController extends GediProgram {
                 case DENSE_PEAK:
                     context.getLog().info("Adding dense peak module");
                     singleLanes.forEach(d -> analyzer.addModule(new CRnaModule(iqr, pseudoCount, windowSize, cleanupThresh, d, useMM, "DENSE_PEAK")));
+                    break;
+                case EQUAL_TRANSCRIPTION:
+                    context.getLog().info("Adding equal transcription module");
+                    singleLanes.forEach(d -> analyzer.addModule(new EqualTranscriptionModule("EQUAL_TRANSCRIPTION", d)));
                     break;
                 default:
                     throw new IllegalArgumentException("AnalyzeModuleType is unrecognized: " + modType);
@@ -144,6 +173,9 @@ public class TiSSController extends GediProgram {
                         analyzer.calculateMLResults(CRnaModule.class, prefix, plotMM);
                     }
                     analyzer.writeOutResults(new LineOrientedFile(getOutputFile(0).getPath()), CRnaModule.class);
+                    break;
+                case EQUAL_TRANSCRIPTION:
+                    analyzer.writeOutResults(new LineOrientedFile(getOutputFile(4).getPath()), EqualTranscriptionModule.class);
                     break;
                 default:
                     throw new IllegalArgumentException("AnalysisModuleType is unrecognized: " + modType);

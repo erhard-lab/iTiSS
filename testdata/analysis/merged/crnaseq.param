@@ -1,0 +1,14 @@
+prefix	analysis/merged/crnaseq
+inTiss	analysis/crnaseq/Density.density.tsv
+gap	1
+ext	1
+minScore	2
+inTsr	analysis/merged/crnaseq_peaks.tsr
+keepFileIds	false
+progress	false
+D	false
+h	false
+hh	false
+hhh	false
+dry	false
+keep	false

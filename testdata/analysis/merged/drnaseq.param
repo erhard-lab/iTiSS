@@ -1,0 +1,14 @@
+prefix	analysis/merged/drnaseq
+inTiss	analysis/drnaseq/Peaks_RepA.sparsePeak.tsv,analysis/drnaseq/Peaks_RepB.sparsePeak.tsv
+gap	10
+ext	10
+minScore	2
+inTsr	
+keepFileIds	false
+progress	false
+D	false
+h	false
+hh	false
+hhh	false
+dry	false
+keep	false

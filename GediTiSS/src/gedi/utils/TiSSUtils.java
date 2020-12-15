@@ -1,7 +1,11 @@
 package gedi.utils;
 
-import gedi.core.data.reads.AlignedReadsData;
-import gedi.core.data.reads.ReadCountMode;
+import gedi.centeredDiskIntervalTree.CenteredDiskIntervalTree;
+import gedi.centeredDiskIntervalTree.CenteredDiskIntervalTreeStorage;
+import gedi.core.data.annotation.NameAnnotation;
+import gedi.core.data.annotation.Transcript;
+import gedi.core.data.reads.*;
+import gedi.core.genomic.Genomic;
 import gedi.core.reference.Chromosome;
 import gedi.core.reference.ReferenceSequence;
 import gedi.core.reference.Strandness;
@@ -10,6 +14,7 @@ import gedi.core.region.intervalTree.MemoryIntervalTreeStorage;
 import gedi.merger.Tiss;
 import gedi.merger.Tsr;
 import gedi.riboseq.utils.RiboUtils;
+import gedi.util.SequenceUtils;
 import gedi.util.StringUtils;
 import gedi.util.datastructure.array.NumericArray;
 import gedi.util.functions.EI;
@@ -17,11 +22,13 @@ import gedi.util.io.text.LineOrientedFile;
 import gedi.util.io.text.LineWriter;
 import gedi.util.mutable.MutablePair;
 import gedi.util.mutable.MutableTriple;
+import gedi.utils.datastructures.SparseNumericArray;
 import gedi.utils.loader.TsrData;
 import gedi.utils.machineLearning.PeakAndPos;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 public class TiSSUtils {
@@ -109,7 +116,7 @@ public class TiSSUtils {
         }
 
         List<Integer> cpy = new ArrayList<>(lst);
-        cpy.sort(Double::compare);
+        cpy.sort(Integer::compare);
         List<Integer> concurrents = new ArrayList<>();
         int last = cpy.get(0);
         concurrents.add(last);
@@ -236,7 +243,7 @@ public class TiSSUtils {
     // ========
 
     // NOTE: using this will loose some information as the TSR file does not contain information about
-    // single Tiss. In this case, use the final TiSS file and the following function "extractTsrsFromFinalFile(...)"
+    // single Tiss. In this case, use the final TiSS file and the following function "extractTsrsFromFinalTiSSFile(...)"
     public static MemoryIntervalTreeStorage<TsrData> loadTsrsFromFinalTsrFile(String path, int skip) throws IOException {
         MemoryIntervalTreeStorage<TsrData> storage = new MemoryIntervalTreeStorage<>(TsrData.class);
         List<ImmutableReferenceGenomicRegion<TsrData>> entries = new ArrayList<>();
@@ -457,6 +464,79 @@ public class TiSSUtils {
         });
     }
 
+    public static double[][] extractReadCountsForConditionsFromSingleFile(GenomicRegionStorage<AlignedReadsData> reads,
+                                                                             int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadType readType) {
+        if (readType == ReadType.DENSITY) {
+            throw new IllegalArgumentException("Only FIVE_PRIME and THREE_PRIME supported. Use extractReadDensitiesForConditionsFromSingleFile() instead.");
+        }
+        if (strandness == Strandness.Unspecific) {
+            throw new IllegalArgumentException("Only Sense and Antisense supported");
+        }
+        double[][] readCounts = new double[condIndex.length][region.getTotalLength()];
+        ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref;
+        final boolean useThreePrimeEnd = strandness == Strandness.Antisense && readType == ReadType.FIVE_PRIME || strandness == Strandness.Sense && readType == ReadType.THREE_PRIME;
+        reads.ei(refTmp, region).forEachRemaining(r -> {
+            int pos = useThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
+            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            int overlappingRegion = -1;
+            for (int or = 0; or < region.getNumParts(); or++) {
+                if (region.getPart(or).asRegion().contains(pos)) {
+                    overlappingRegion = or;
+                    break;
+                }
+            }
+            if (overlappingRegion == -1) {
+                return;
+            }
+            int lengthOfPartsBefore = 0;
+            for (int or = 0; or < overlappingRegion; or++) {
+                lengthOfPartsBefore += region.getPart(or).asRegion().getTotalLength();
+            }
+            int posIndex = lengthOfPartsBefore + (pos-region.getPart(overlappingRegion).getStart());
+            if (posIndex < 0 || posIndex >= region.getTotalLength()) {
+                return;
+            }
+            for (int c = 0; c < condIndex.length; c++) {
+                readCounts[c][posIndex] += counts[condIndex[c]];
+            }
+        });
+
+        return readCounts;
+    }
+
+    public static double[][] extractReadDensitiesForConditionsFromSingleFile(GenomicRegionStorage<AlignedReadsData> reads,
+                                                          int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadCountMode readCountMode) {
+        ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : strandness.equals(Strandness.Unspecific) ? ref.toStrandIndependent() : ref;
+        double[][] readDensities = new double[condIndex.length][region.getTotalLength()];
+        reads.ei(refTmp, region).forEachRemaining(r -> {
+            GenomicRegion reg = r.getRegion();
+            double[] counts = r.getData().getTotalCountsForConditions(readCountMode);
+            reg.iterator().forEachRemaining(regPart -> {
+                for (int i = regPart.getStart(); i < regPart.getEnd(); i++) {
+                    int overlappingRegion = -1;
+                    for (int or = 0; or < region.getNumParts(); or++) {
+                        if (region.getPart(or).asRegion().contains(i)) {
+                            overlappingRegion = or;
+                            break;
+                        }
+                    }
+                    if (overlappingRegion == -1) {
+                        continue;
+                    }
+                    int lengthOfPartsBefore = 0;
+                    for (int or = 0; or < overlappingRegion; or++) {
+                        lengthOfPartsBefore += region.getPart(or).asRegion().getTotalLength();
+                    }
+                    int posIndex = lengthOfPartsBefore + (i-region.getPart(overlappingRegion).getStart());
+                    for (int c = 0; c < condIndex.length; c++) {
+                        readDensities[c][posIndex] += counts[condIndex[c]];
+                    }
+                }
+            });
+        });
+        return readDensities;
+    }
+
     public static void extractReadDensitiesFromSingleFileNormalized(NumericArray ary, GenomicRegionStorage<AlignedReadsData> reads,
                                                                     int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region,
                                                                     float[] totals) {
@@ -545,7 +625,22 @@ public class TiSSUtils {
                 cond -= reads.get(lstIndex).getMetaDataConditions().length;
                 lstIndex++;
             }
-            extractFivePrimeCountsFromSingleFile(readCounts, reads.get(lstIndex), cond, ref, strandness, new ArrayGenomicRegion(0, refLength));
+            extractCountsFromSingleFile(readCounts, reads.get(lstIndex), cond, ref, strandness, new ArrayGenomicRegion(0, refLength), ReadType.FIVE_PRIME);
+        }
+        return readCounts;
+    }
+
+    public static NumericArray extractCounts(List<GenomicRegionStorage<AlignedReadsData>> reads,
+                                                      int[] condIndex, ReferenceSequence ref, int refLength, Strandness strandness, ReadType readType) {
+
+        NumericArray readCounts = NumericArray.createMemory(refLength, NumericArray.NumericArrayType.Float);
+        for (int cond : condIndex) {
+            int lstIndex = 0;
+            while (cond >= reads.get(lstIndex).getMetaDataConditions().length) {
+                cond -= reads.get(lstIndex).getMetaDataConditions().length;
+                lstIndex++;
+            }
+            extractCountsFromSingleFile(readCounts, reads.get(lstIndex), cond, ref, strandness, new ArrayGenomicRegion(0, refLength), readType);
         }
         return readCounts;
     }
@@ -560,13 +655,82 @@ public class TiSSUtils {
                 cond -= reads.get(lstIndex).getMetaDataConditions().length;
                 lstIndex++;
             }
-            extractFivePrimeCountsFromSingleFile(readCounts, reads.get(lstIndex), cond, ref, strandness, region);
+            extractCountsFromSingleFile(readCounts, reads.get(lstIndex), cond, ref, strandness, region, ReadType.FIVE_PRIME);
         }
         return readCounts;
     }
 
+    public static double[] extractShortTotalRatios(List<GenomicRegionStorage<AlignedReadsData>> reads,
+                                                          int[] condIndex, int maxShortLength, ReferenceSequence ref, GenomicRegion region, Strandness strandness) {
+        double[] shortTotalRatios = new double[region.getTotalLength()];
+
+        int[] readsNumConds = reads.stream().mapToInt(r -> r.getMetaDataConditions().length).toArray();
+        int[][] condCitIndices = condIndexToCitCondIndex(readsNumConds, condIndex);
+        for (int citIndex = 0; citIndex < condCitIndices.length; citIndex++) {
+            int[] indices = condCitIndices[citIndex];
+            extractShortTotalRatiosFromSingleFile(shortTotalRatios, reads.get(citIndex), indices, maxShortLength, ref, strandness, region, ReadCountMode.Weight);
+        }
+
+        return shortTotalRatios;
+    }
+
+    public static void extractShortTotalRatiosFromSingleFile(double[] shortTotalRatios, GenomicRegionStorage<AlignedReadsData> reads, int[] conds, int maxShortLength,
+                                                             ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadCountMode mode) {
+        ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref;
+        double[][] shortAndTotalReads = new double[2][shortTotalRatios.length];
+        reads.ei(refTmp, region).filter(r -> region.contains(strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r))).forEachRemaining(r -> {
+            GenomicRegion reg = r.getRegion();
+            double[] counts = r.getData().getTotalCountsForConditions(mode);
+            int readLength = reg.getEnd() - reg.getStart();
+            int pos = (strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r)) - region.getStart();
+            double count = 0.0;
+            for (int c : conds) {
+                count += counts[c];
+            }
+            if (readLength <= maxShortLength) {
+                shortAndTotalReads[0][pos] += count;
+            }
+            shortAndTotalReads[1][pos] += count;
+        });
+        for (int i = 0; i < shortTotalRatios.length; i++) {
+            shortTotalRatios[i] = shortAndTotalReads[1][i] == 0 ? 0 : shortAndTotalReads[0][i]/shortAndTotalReads[1][i];
+        }
+    }
+
+    public static Map<Integer, Double> extractReadLengths(List<GenomicRegionStorage<AlignedReadsData>> reads,
+                                                           int[] condIndex, ReferenceSequence ref, GenomicRegion region, Strandness strandness) {
+        Map<Integer, Double> readLengths = new HashMap<>();
+
+        int[] readsNumConds = reads.stream().mapToInt(r -> r.getMetaDataConditions().length).toArray();
+        int[][] condCitIndices = condIndexToCitCondIndex(readsNumConds, condIndex);
+        for (int citIndex = 0; citIndex < condCitIndices.length; citIndex++) {
+            int[] indices = condCitIndices[citIndex];
+            extractReadLengthsFromSingleFile(readLengths, reads.get(citIndex), indices, ref, strandness, region, ReadCountMode.Weight);
+        }
+
+        return readLengths;
+    }
+
+    public static void extractReadLengthsFromSingleFile(Map<Integer, Double> readLengths, GenomicRegionStorage<AlignedReadsData> reads, int[] conds,
+                                                        ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadCountMode mode) {
+        ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref;
+        reads.ei(refTmp, region).filter(r -> region.contains(strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r))).forEachRemaining(r -> {
+            GenomicRegion reg = r.getRegion();
+            double[] counts = r.getData().getTotalCountsForConditions(mode);
+            int readLength = reg.getEnd() - reg.getStart();
+            if (!readLengths.containsKey(readLength)) {
+                readLengths.put(readLength, 0.0);
+            }
+            double count = 0.0;
+            for (int c : conds) {
+                count += counts[c];
+            }
+            readLengths.put(readLength, readLengths.get(readLength) + count);
+        });
+    }
+
     /**
-     * normalized based on read-totals. REGION LENGTH IS NOT CONSIDERED!!!!
+     * normalized based on read-totals. REGION LENGTH IS NOT CONSIDERED, SO NO RPKM!!!!
      * @param reads
      * @param condIndex
      * @param ref
@@ -587,7 +751,7 @@ public class TiSSUtils {
                 lstIndex++;
             }
             NumericArray readCountsTmp = NumericArray.createMemory(region.getTotalLength(), NumericArray.NumericArrayType.Float);
-            extractFivePrimeCountsFromSingleFile(readCountsTmp, reads.get(lstIndex), cond, ref, strandness, region);
+            extractCountsFromSingleFile(readCountsTmp, reads.get(lstIndex), cond, ref, strandness, region, ReadType.FIVE_PRIME);
             for (int i = 0; i < readCountsTmp.length(); i++) {
                 readCounts.setFloat(i, readCounts.getFloat(i) + ((readCountsTmp.getFloat(i)/totals[cond]) * 1.0E6f));
             }
@@ -596,14 +760,15 @@ public class TiSSUtils {
     }
 
     public static void extractFivePrimeCountsFromSingleFile(NumericArray ary, GenomicRegionStorage<AlignedReadsData> reads, int cond, ReferenceSequence ref, Strandness strandness) {
-        extractFivePrimeCountsFromSingleFile(ary, reads, cond, ref, strandness, new ArrayGenomicRegion(0, ary.length()));
+        extractCountsFromSingleFile(ary, reads, cond, ref, strandness, new ArrayGenomicRegion(0, ary.length()), ReadType.FIVE_PRIME);
     }
 
-    public static void extractFivePrimeCountsFromSingleFile(NumericArray ary, GenomicRegionStorage<AlignedReadsData> reads, int cond, ReferenceSequence ref, Strandness strandness, GenomicRegion region) {
+    public static void extractCountsFromSingleFile(NumericArray ary, GenomicRegionStorage<AlignedReadsData> reads, int cond, ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadType readType) {
         ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref;
+        final boolean switchFiveAndThreePrimeEnd = strandness == Strandness.Antisense && readType == ReadType.FIVE_PRIME || strandness == Strandness.Sense && readType == ReadType.THREE_PRIME;
         reads.ei(refTmp, region).forEachRemaining(r -> {
-            int pos0 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
-            int pos1 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
+            int pos0 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
+            int pos1 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
             NumericArray c0 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
             NumericArray c1 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
             for (int k = 0; k < r.getData().getDistinctSequences(); k++) {
@@ -624,6 +789,98 @@ public class TiSSUtils {
                 if (c1.length() > 0) {
                     ary.setFloat(posIndex1, ary.getFloat(posIndex1) + c1.getFloat(cond));
                 }
+            }
+        });
+    }
+
+    public static SparseNumericArray<Double> extractFivePrimeCountsNormalizedSparse(List<GenomicRegionStorage<AlignedReadsData>> reads,
+                                                                int[] condIndex, ReferenceSequence ref, GenomicRegion region, Strandness strandness,
+                                                                float[] totals) {
+        SparseNumericArray<Double> readCounts = new SparseNumericArray<>(region.getTotalLength(), 0.0d);
+        for (int cond : condIndex) {
+            int lstIndex = 0;
+            while (cond >= reads.get(lstIndex).getMetaDataConditions().length) {
+                cond -= reads.get(lstIndex).getMetaDataConditions().length;
+                lstIndex++;
+            }
+            SparseNumericArray<Double> readCountsTmp = new SparseNumericArray<>(region.getTotalLength(), 0.0d);
+            extractFivePrimeCountsFromSingleFileSparse(readCountsTmp, reads.get(lstIndex), cond, ref, strandness, region);
+            for (int i : readCountsTmp.getNonZeroIndices()) {
+                readCounts.set(i, readCounts.get(i) + ((readCountsTmp.get(i)/totals[cond]) * 1.0E6d));
+            }
+        }
+        return readCounts;
+    }
+
+    public static void extractFivePrimeCountsFromSingleFileSparse(SparseNumericArray<Double> ary, GenomicRegionStorage<AlignedReadsData> reads, int cond, ReferenceSequence ref, Strandness strandness) {
+        extractFivePrimeCountsFromSingleFileSparse(ary, reads, cond, ref, strandness, new ArrayGenomicRegion(0, ary.length()));
+    }
+
+    public static void extractFivePrimeCountsFromSingleFileSparse(SparseNumericArray<Double> ary, GenomicRegionStorage<AlignedReadsData> reads, int cond, ReferenceSequence ref, Strandness strandness, GenomicRegion region) {
+        ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref;
+        reads.ei(refTmp, region).forEachRemaining(r -> {
+            int pos0 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
+            int pos1 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
+            NumericArray c0 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Double);
+            NumericArray c1 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Double);
+            for (int k = 0; k < r.getData().getDistinctSequences(); k++) {
+                if (hasEndMismatch(r.getData(), k, r.getRegion().getTotalLength(), strandness)) {
+                    c1 = r.getData().addCountsForDistinct(k, c1, ReadCountMode.Weight);
+                } else {
+                    c0 = r.getData().addCountsForDistinct(k, c0, ReadCountMode.Weight);
+                }
+            }
+            int posIndex0 = pos0 - region.getStart();
+            if (posIndex0 >= 0 && posIndex0 < ary.length()) {
+                if (c0.length() > 0) {
+                    ary.set(posIndex0, ary.get(posIndex0) + c0.getDouble(cond));
+                }
+            }
+            int posIndex1 = pos1 - region.getStart();
+            if (posIndex1 >= 0 && posIndex1 < ary.length()) {
+                if (c1.length() > 0) {
+                    ary.set(posIndex1, ary.get(posIndex1) + c1.getDouble(cond));
+                }
+            }
+        });
+    }
+
+    public static void extractFivePrimeCountsFromSingleFileSparseFull(SparseNumericArray<Float>[] ary, GenomicRegionStorage<AlignedReadsData> reads, ReferenceSequence ref, Strandness strandness) {
+        extractFivePrimeCountsFromSingleFileSparseFull(ary, reads, ref, strandness, new ArrayGenomicRegion(0, ary[0].length()));
+    }
+
+    public static void extractFivePrimeCountsFromSingleFileSparseFull(SparseNumericArray<Float>[] ary, GenomicRegionStorage<AlignedReadsData> reads, ReferenceSequence ref, Strandness strandness, GenomicRegion region) {
+        ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref;
+        reads.ei(refTmp, region).forEachRemaining(r -> {
+            int pos0 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
+            int pos1 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
+            NumericArray c0 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
+            NumericArray c1 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
+            for (int k = 0; k < r.getData().getDistinctSequences(); k++) {
+                if (hasEndMismatch(r.getData(), k, r.getRegion().getTotalLength(), strandness)) {
+                    c1 = r.getData().addCountsForDistinct(k, c1, ReadCountMode.Weight);
+                } else {
+                    c0 = r.getData().addCountsForDistinct(k, c0, ReadCountMode.Weight);
+                }
+            }
+            int posIndex0 = pos0 - region.getStart();
+            if (posIndex0 >= 0 && posIndex0 < ary[0].length()) {
+                if (c0.length() > 0) {
+                    for (int i = 0; i < c0.length(); i++) {
+                        ary[i].set(posIndex0, ary[i].get(posIndex0) + c0.getFloat(i));
+                    }
+                }
+            }
+            int posIndex1 = pos1 - region.getStart();
+            if (posIndex1 >= 0 && posIndex1 < ary[0].length()) {
+                if (c1.length() > 0) {
+                    for (int i = 0; i < c1.length(); i++) {
+                        ary[i].set(posIndex1, ary[i].get(posIndex1) + c1.getFloat(i));
+                    }
+                }
+            }
+            if(c0.length() > 0 && c0.length() != ary.length || c1.length() > 0 && c1.length() != ary.length) {
+                System.err.println("Wrong lengths");
             }
         });
     }
@@ -666,6 +923,19 @@ public class TiSSUtils {
     public static List<MutablePair<Integer, Double>> cleanUpMultiValueDataPair(List<MutablePair<Integer, Double>> lstToClean, int multiThreshold) {
         Map<Long, Integer> countMap = new HashMap<>();
         for (MutablePair<Integer, Double> itm : lstToClean) {
+            long bits = Double.doubleToLongBits(itm.Item2);
+            if (countMap.containsKey(bits)) {
+                countMap.put(bits, countMap.get(bits) + 1);
+            } else {
+                countMap.put(bits, 1);
+            }
+        }
+        return EI.wrap(lstToClean).filter(i -> countMap.get(Double.doubleToLongBits(i.Item2)) < multiThreshold).list();
+    }
+
+    public static List<MutableTriple<Integer, Double, Double>> cleanUpMultiValueDataTriple(List<MutableTriple<Integer, Double, Double>> lstToClean, int multiThreshold) {
+        Map<Long, Integer> countMap = new HashMap<>();
+        for (MutableTriple<Integer, Double, Double> itm : lstToClean) {
             long bits = Double.doubleToLongBits(itm.Item2);
             if (countMap.containsKey(bits)) {
                 countMap.put(bits, countMap.get(bits) + 1);
@@ -767,8 +1037,182 @@ public class TiSSUtils {
         }
     }
 
+    public static String getGeneNameFromGeneId(String geneId, Genomic genomic) {
+        return genomic.getGeneTable("symbol").apply(geneId);
+    }
+
+    public static ImmutableReferenceGenomicRegion<NameAnnotation> getRgrFromGeneName(String geneName, Genomic genomic) {
+        ReferenceGenomicRegion<?> rgr = genomic.getNameIndex().get(geneName);
+        if (rgr == null) {
+            return null;
+        }
+        return new ImmutableReferenceGenomicRegion<>(rgr.getReference(), rgr.getRegion(), new NameAnnotation(rgr.getData().toString()));
+    }
+
+    public static int[] getOrder(double[] ary, Comparator<Double> doubleComparator) {
+        ArrayList<Double> cloned = EI.wrap(ary).list();
+        ArrayList<Double> clonedToSort = EI.wrap(ary).list();
+        clonedToSort.sort(doubleComparator);
+        int skip = 0;
+        Set<Integer> indices = EI.seq(0, ary.length).set();
+        int[] out = new int[ary.length];
+        for (int i = 0; i < out.length; i++) {
+            int index = indexOf(cloned, clonedToSort.get(i), skip);
+            if (indices.contains(index)) {
+                indices.remove(index);
+                out[i] = index;
+                skip = 0;
+            } else {
+                skip++;
+                i--;
+            }
+        }
+        return out;
+    }
+
+    private static int indexOf(List<Double> lst, Double d, int skip) {
+        int skipped = 0;
+        for (int i = 0; i < lst.size(); i++) {
+            if (lst.get(i).equals(d)) {
+                if (skipped == skip) {
+                    return i;
+                }
+                skipped++;
+            }
+        }
+        return -1;
+    }
+
+    public static double mean(List<Integer> lst) {
+        double total = lst.stream().mapToDouble(e -> (double) e).sum();
+        return total/lst.size();
+    }
+
+    public static double sampleVar(List<Integer> lst) {
+        double mean = mean(lst);
+        return lst.stream().mapToDouble(e -> Math.pow(e-mean, 2.d)).sum() / (lst.size()-1);
+    }
+
+    public static double sampleSd(List<Integer> lst) {
+        return Math.sqrt(sampleVar(lst));
+    }
+
+    public static double getReadCount(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness) {
+        AtomicReference<Double> readCount = new AtomicReference<>(0.0);
+        ReferenceSequence refTmp = strandness == Strandness.Antisense ? ref.toOppositeStrand() : ref;
+        cit.ei(refTmp, reg).forEachRemaining(r -> {
+            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            for (int i : conditions) {
+                readCount.updateAndGet(v -> v + counts[i]);
+            }
+        });
+        return readCount.get();
+    }
+
+    public static double getReadCountFivePrime(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness) {
+        AtomicReference<Double> readCount = new AtomicReference<>(0.0);
+        ReferenceSequence refTmp = strandness == Strandness.Antisense ? ref.toOppositeStrand() : ref;
+        cit.ei(refTmp, reg).filter(f -> {
+            if (strandness == Strandness.Antisense) {
+                return reg.contains(GenomicRegionPosition.ThreePrime.position(f));
+            } else {
+                return reg.contains(GenomicRegionPosition.FivePrime.position(f));
+            }
+        }).forEachRemaining(r -> {
+            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            for (int i : conditions) {
+                readCount.updateAndGet(v -> v + counts[i]);
+            }
+        });
+        return readCount.get();
+    }
+
+    public static double[] getReadCountForConditions(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness) {
+        double[] out= new double[conditions.length];
+        ReferenceSequence refTmp = strandness == Strandness.Antisense ? ref.toOppositeStrand() : ref;
+        cit.ei(refTmp, reg).forEachRemaining(r -> {
+            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            for (int i = 0; i < conditions.length; i++) {
+                out[i] += counts[conditions[i]];
+            }
+        });
+        return out;
+    }
+
+    public static double[] getReadCountFivePrimeForConditions(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness) {
+        double[] out= new double[conditions.length];
+        ReferenceSequence refTmp = strandness == Strandness.Antisense ? ref.toOppositeStrand() : ref;
+        cit.ei(refTmp, reg).filter(f -> {
+            if (strandness == Strandness.Antisense) {
+                return reg.contains(GenomicRegionPosition.ThreePrime.position(f));
+            } else {
+                return reg.contains(GenomicRegionPosition.FivePrime.position(f));
+            }
+        }).forEachRemaining(r -> {
+            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            for (int i = 0; i < conditions.length; i++) {
+                out[i] += counts[conditions[i]];
+            }
+        });
+        return out;
+    }
+
+    public static AlignedReadsData alignedReadsDataToOppositeStrand(AlignedReadsData data) {
+        AlignedReadsDataFactory factory = new AlignedReadsDataFactory(data.getNumConditions(), data.hasNonzeroInformation());
+
+        factory.start();
+        for (int d = 0; d < data.getDistinctSequences(); d++) {
+            factory.newDistinctSequence();
+            if (data.hasGeometry()) {
+                factory.setGeometry(data.getGeometryBeforeOverlap(d), data.getGeometryOverlap(d), data.getGeometryAfterOverlap(d));
+            }
+            factory.setMultiplicity(data.getMultiplicity(d));
+            if (data.hasWeights()) {
+                factory.setWeight(d, data.getWeight(d));
+            }
+            if (data.hasNonzeroInformation()) {
+                for (int i : data.getNonzeroCountIndicesForDistinct(d)) {
+                    factory.setCount(i, data.getCount(d, i));
+                }
+            }
+            else {
+                for (int c = 0; c < data.getNumConditions(); c++) {
+                    int count = data.getCount(d, c);
+                    if (count > 0) {
+                        factory.setCount(d, c, count);
+                    }
+                }
+            }
+            for (AlignedReadsVariation var : data.getVariations(d)) {
+                if (var.isSoftclip()) {
+                    AlignedReadsSoftclip softclip = (AlignedReadsSoftclip) var;
+                    factory.addVariation(new AlignedReadsSoftclip(softclip.getPosition()!=0, SequenceUtils.getDnaReverseComplement(softclip.getReadSequence()), softclip.isFromSecondRead()));
+                } else if (var.isMismatch()) {
+                    AlignedReadsMismatch mismatch = (AlignedReadsMismatch) var;
+                    factory.addVariation(new AlignedReadsMismatch(data.getMappedLength(d) - mismatch.getPosition() - 1, SequenceUtils.getDnaReverseComplement(mismatch.getReferenceSequence()), SequenceUtils.getDnaReverseComplement(mismatch.getReadSequence()), mismatch.isFromSecondRead()));
+                } else if (var.isDeletion()) {
+                    AlignedReadsDeletion deletion = (AlignedReadsDeletion) var;
+                    factory.addVariation(new AlignedReadsDeletion(data.getMappedLength(d) - deletion.getPosition() - 1, SequenceUtils.getDnaReverseComplement(deletion.getReferenceSequence()), deletion.isFromSecondRead()));
+                } else if (var.isInsertion()) {
+                    AlignedReadsInsertion insertion = (AlignedReadsInsertion) var;
+                    factory.addVariation(new AlignedReadsInsertion(data.getMappedLength(d) - insertion.getPosition() - 1, insertion.getReadSequence(), insertion.isFromSecondRead()));
+                }
+            }
+            if (data.hasId()) {
+                factory.setId(d, data.getId(d));
+            }
+        }
+        factory.makeDistinct();
+
+        return factory.create();
+    }
+
+    public static int[][] conditionMergeStringToIntArray(String toMerge) {
+        return EI.wrap(StringUtils.split(toMerge, "/")).map(m -> EI.wrap(StringUtils.split(m, ",")).mapToInt(Integer::parseInt).toIntArray()).toArray(new int[0][]);
+    }
+
     // This function is used for the iTiSS-paper only and transforms data formats of ADAPT-CAGE, TSRFinder, TSSPredator into a uniform one
-    // p-Values are switched (i.e. 1-pValue) to unify the meaning of scores (high score = TiSS)
+    // p-Values are switched (i.e. 1-pValue) to unify the meaning of scores (high totalDelta = TiSS)
     // cRNA-seq data is normalized for all three metrices (DENSITY/KINETIC/PEAK)
     //    This means, that the values are converted into 0-1 range, where 0 is the lowest value and 1 the highest value for the respective dataset
     //

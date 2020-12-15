@@ -1,14 +1,15 @@
 package gedi.modules;
 
-import gedi.core.reference.Chromosome;
 import gedi.core.reference.ReferenceSequence;
 import gedi.data.Data;
+import gedi.merger2.TissFile;
 import gedi.util.datastructure.array.NumericArray;
 import gedi.util.dynamic.impl.DoubleDynamicObject;
 import gedi.util.functions.EI;
 import gedi.util.io.text.LineOrientedFile;
 import gedi.util.io.text.LineWriter;
 import gedi.util.mutable.MutablePair;
+import gedi.util.mutable.MutableTriple;
 import gedi.util.r.RRunner;
 import gedi.utils.TiSSUtils;
 import gedi.utils.machineLearning.PeakAndPos;
@@ -81,8 +82,6 @@ public class DRnaModule extends ModuleBase {
             windowSum -= xrn1.getDouble(i-windowSize);
         }
 
-        System.err.println(tiss.size() + " peaks found in dRNA with ref " + ref.toPlusMinusString());
-
         Map<Integer, Map<String, Double>> foundPeaksNew = this.res.computeIfAbsent(ref, k -> new HashMap<>());
         List<Double> mmDatOut = this.allMmData.computeIfAbsent(ref, k-> new ArrayList<>());
 
@@ -90,7 +89,8 @@ public class DRnaModule extends ModuleBase {
             mmDatOut.addAll(mmData.stream().map(PeakAndPos::getValue).collect(Collectors.toList()));
             mmData.forEach(m -> {
                 Map<String, Double> info = new HashMap<>();
-                info.put("Fold-change", m.getValue());
+                info.put(TissFile.FOLD_CHANGE_COLUMN_NAME, m.getValue());
+                info.put(TissFile.READ_COUNT_COLUMN_NAME, xrn1.getDouble(m.getPos()));
                 foundPeaksNew.put(m.getPos(), info);
             });
         } else {
@@ -127,8 +127,8 @@ public class DRnaModule extends ModuleBase {
             Map<Integer, Map<String, Double>> tss = res.get(ref);
             for (int tssPos : tss.keySet()) {
                 Map<String, Double> info = tss.get(tssPos);
-                mlData.add(new PeakAndPos(tssPos, info.get("Fold-change")));
-                writerup.writeLine(ref.toPlusMinusString() + "\t" + tssPos + "\t" + info.get("Fold-change"));
+                mlData.add(new PeakAndPos(tssPos, info.get(TissFile.FOLD_CHANGE_COLUMN_NAME)));
+                writerup.writeLine(ref.toPlusMinusString() + "\t" + tssPos + "\t" + info.get(TissFile.FOLD_CHANGE_COLUMN_NAME));
             }
         }
         writerup.close();
@@ -140,15 +140,20 @@ public class DRnaModule extends ModuleBase {
 
             Map<Integer, Map<String, Double>> tss2val = res.get(ref);
             if (cleanupThresh > 0) {
-                List<MutablePair<Integer, Double>> vals = EI.wrap(res.get(ref).keySet()).map(t -> new MutablePair<>(t, res.get(ref).get(t).get("Fold-change"))).list();
-                vals = TiSSUtils.cleanUpMultiValueDataPair(vals, cleanupThresh);
+                // Triple<Pos, Fold-change, Read-count>
+                List<MutableTriple<Integer, Double, Double>> vals = EI.wrap(res.get(ref).keySet()).map(t -> new MutableTriple<>(t, res.get(ref).get(t).get(TissFile.FOLD_CHANGE_COLUMN_NAME), res.get(ref).get(t).get(TissFile.READ_COUNT_COLUMN_NAME))).list();
+                vals = TiSSUtils.cleanUpMultiValueDataTriple(vals, cleanupThresh);
                 Map<Integer,Map<String,Double>> tss2valFiltered = new HashMap<>();
-                EI.wrap(vals).forEachRemaining(u -> tss2valFiltered.computeIfAbsent(u.Item1, absent->new HashMap<>()).put("Fold-change", u.Item2));
+                EI.wrap(vals).forEachRemaining(u -> {
+                    Map<String, Double> tmpmap = tss2valFiltered.computeIfAbsent(u.Item1, absent->new HashMap<>());
+                    tmpmap.put(TissFile.FOLD_CHANGE_COLUMN_NAME, u.Item2);
+                    tmpmap.put(TissFile.READ_COUNT_COLUMN_NAME, u.Item3);
+                });
                 tss2val = tss2valFiltered;
             }
 
             for (int tss : tss2val.keySet()) {
-                if (tss2val.get(tss).get("Fold-change") > upThresh) {
+                if (tss2val.get(tss).get(TissFile.FOLD_CHANGE_COLUMN_NAME) > upThresh) {
                     filtered.put(tss, tss2val.get(tss));
                 }
             }

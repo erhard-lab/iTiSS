@@ -1,0 +1,28 @@
+chromSizes	HSV1.chrom.sizes
+bams	
+reads	analysis/crnaseq/Peaks_RepABAM2CIT_convertedReads.cit,analysis/crnaseq/Peaks_RepBBAM2CIT_convertedReads.cit
+genomic	
+windowSize	100
+zscore	5.0
+minReadDens	0.0
+rep	XX
+pseudo	1.0
+peakFC	4.0
+timepoints	
+strandness	Sense
+autoparam	true
+plotParams	true
+modType	DENSITY
+pVal	1.0E-4
+cleanupThresh	100
+testChr	null
+readType	FIVE_PRIME
+upAndDown	false
+prefix	analysis/crnaseq/Density
+progress	false
+D	false
+h	false
+hh	false
+hhh	false
+dry	false
+keep	false

@@ -1,0 +1,14 @@
+prefix	analysis/merged/crnaseq_peaks
+inTiss	analysis/crnaseq/Peaks_RepA_adjusted.densePeak.tsv,analysis/crnaseq/Peaks_RepB_adjusted.densePeak.tsv
+gap	5
+ext	5
+minScore	1
+inTsr	
+keepFileIds	false
+progress	false
+D	false
+h	false
+hh	false
+hhh	false
+dry	false
+keep	false
