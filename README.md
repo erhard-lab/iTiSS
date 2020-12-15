@@ -29,7 +29,7 @@ iTiSS (integrated Transcriptional start site caller) is a method to identify tra
 
 ## Usage
 
-Please see the [iTiSS quickstart guie](https://github.com/erhard-lab/iTiSS/wiki/iTiSS-Quickstart-guide) for a quick start on how to use iTiSS including a small test dataset. If more in-depth knowledge is needed as well as a more "real-life" dataset as an example, read on.
+Please see the [iTiSS quickstart guide](https://github.com/erhard-lab/iTiSS/wiki/iTiSS-Quickstart-guide) for a quick start on how to use iTiSS including a small test dataset. If more in-depth knowledge is needed as well as a more "real-life" dataset as an example, read on.
 
 iTiSS was designed to work on the internal data format of the `gedi`-tookit called `CIT` as well as an indexed genome in `.oml`-format. However, it contains a conversion module, exporting `BAM`-files into the `CIT`-format and creating the indexed genome on the fly.
 
