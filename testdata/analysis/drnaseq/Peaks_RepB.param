@@ -11,7 +11,7 @@ peakFC	4.0
 timepoints	
 strandness	Sense
 autoparam	true
-plotParams	true
+plotParams	false
 modType	SPARSE_PEAK
 pVal	1.0E-4
 cleanupThresh	100
