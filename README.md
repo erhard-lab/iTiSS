@@ -25,7 +25,7 @@ iTiSS (integrated Transcriptional start site caller) is a method to identify tra
 ## Installation using the binaries (recommended)
 
 - Download the .jar-file of the newest [iTiSS release](https://github.com/erhard-lab/iTiSS/releases)
-- That's it. If a Java runtime environment is already installed, you shoud be presented with the help-desk when executing `java -cp iTiSS.jar -hh` on the command line.
+- That's it. If a Java runtime environment is already installed, you shoud be presented with the help-desk when executing `java -cp iTiSS.jar executables/TiSS -hh` on the command line.
 
 ## Usage
 
