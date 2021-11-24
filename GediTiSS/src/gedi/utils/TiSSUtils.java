@@ -4,6 +4,9 @@ import gedi.centeredDiskIntervalTree.CenteredDiskIntervalTree;
 import gedi.centeredDiskIntervalTree.CenteredDiskIntervalTreeStorage;
 import gedi.core.data.annotation.NameAnnotation;
 import gedi.core.data.annotation.Transcript;
+import gedi.core.data.numeric.GenomicNumericProvider;
+import gedi.core.data.numeric.diskrmq.DiskGenomicNumericLoader;
+import gedi.core.data.numeric.diskrmq.DiskGenomicNumericProvider;
 import gedi.core.data.reads.*;
 import gedi.core.genomic.Genomic;
 import gedi.core.reference.Chromosome;
@@ -14,10 +17,13 @@ import gedi.core.region.intervalTree.MemoryIntervalTreeStorage;
 import gedi.merger.Tiss;
 import gedi.merger.Tsr;
 import gedi.riboseq.utils.RiboUtils;
+import gedi.util.ArrayUtils;
 import gedi.util.SequenceUtils;
 import gedi.util.StringUtils;
 import gedi.util.datastructure.array.NumericArray;
+import gedi.util.datastructure.array.functions.NumericArrayFunction;
 import gedi.util.functions.EI;
+import gedi.util.functions.ExtendedIterator;
 import gedi.util.io.text.LineOrientedFile;
 import gedi.util.io.text.LineWriter;
 import gedi.util.mutable.MutablePair;
@@ -407,7 +413,19 @@ public class TiSSUtils {
         int[][] condCitIndices = condIndexToCitCondIndex(readsNumConds, condIndex);
         for (int citIndex = 0; citIndex < condCitIndices.length; citIndex++) {
             int[] indices = condCitIndices[citIndex];
-            extractReadDensitiesFromSingleFile(readCounts, reads.get(citIndex), indices, ref, strandness, new ArrayGenomicRegion(0, refLength));
+            extractReadDensitiesFromSingleFile(readCounts, reads.get(citIndex), indices, ref, strandness, new ArrayGenomicRegion(0, refLength), ReadCountMode.Weight);
+        }
+        return readCounts;
+    }
+
+    public static NumericArray extractReadDensities(List<GenomicRegionStorage<AlignedReadsData>> reads,
+                                                    int[] condIndex, ReferenceSequence ref, int refLength, Strandness strandness, ReadCountMode mode) {
+        NumericArray readCounts = NumericArray.createMemory(refLength, NumericArray.NumericArrayType.Float);
+        int[] readsNumConds = reads.stream().mapToInt(r -> r.getMetaDataConditions().length).toArray();
+        int[][] condCitIndices = condIndexToCitCondIndex(readsNumConds, condIndex);
+        for (int citIndex = 0; citIndex < condCitIndices.length; citIndex++) {
+            int[] indices = condCitIndices[citIndex];
+            extractReadDensitiesFromSingleFile(readCounts, reads.get(citIndex), indices, ref, strandness, new ArrayGenomicRegion(0, refLength), mode);
         }
         return readCounts;
     }
@@ -419,7 +437,7 @@ public class TiSSUtils {
         int[][] condCitIndices = condIndexToCitCondIndex(readsNumConds, condIndex);
         for (int citIndex = 0; citIndex < condCitIndices.length; citIndex++) {
             int[] indices = condCitIndices[citIndex];
-            extractReadDensitiesFromSingleFile(readCounts, reads.get(citIndex), indices, ref, strandness, region);
+            extractReadDensitiesFromSingleFile(readCounts, reads.get(citIndex), indices, ref, strandness, region, ReadCountMode.Weight);
         }
         return readCounts;
     }
@@ -445,11 +463,11 @@ public class TiSSUtils {
     }
 
     public static void extractReadDensitiesFromSingleFile(NumericArray ary, GenomicRegionStorage<AlignedReadsData> reads,
-                                                    int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region) {
+                                                    int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadCountMode mode) {
         ReferenceSequence refTmp = strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref;
         reads.ei(refTmp, region).forEachRemaining(r -> {
             GenomicRegion reg = r.getRegion();
-            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            double[] counts = r.getData().getTotalCountsForConditions(mode);
             reg.iterator().forEachRemaining(regPart -> {
                 for (int i = regPart.getStart(); i < regPart.getEnd(); i++) {
                     int posIndex = i-region.getStart();
@@ -465,7 +483,12 @@ public class TiSSUtils {
     }
 
     public static double[][] extractReadCountsForConditionsFromSingleFile(GenomicRegionStorage<AlignedReadsData> reads,
-                                                                             int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadType readType) {
+                                                                          int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadType readType) {
+        return extractReadCountsForConditionsFromSingleFile(reads, condIndex, ref, strandness, region, readType, ReadCountMode.Weight);
+    }
+
+    public static double[][] extractReadCountsForConditionsFromSingleFile(GenomicRegionStorage<AlignedReadsData> reads,
+                                                                             int[] condIndex, ReferenceSequence ref, Strandness strandness, GenomicRegion region, ReadType readType, ReadCountMode readCountMode) {
         if (readType == ReadType.DENSITY) {
             throw new IllegalArgumentException("Only FIVE_PRIME and THREE_PRIME supported. Use extractReadDensitiesForConditionsFromSingleFile() instead.");
         }
@@ -477,7 +500,7 @@ public class TiSSUtils {
         final boolean useThreePrimeEnd = strandness == Strandness.Antisense && readType == ReadType.FIVE_PRIME || strandness == Strandness.Sense && readType == ReadType.THREE_PRIME;
         reads.ei(refTmp, region).forEachRemaining(r -> {
             int pos = useThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
-            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            double[] counts = r.getData().getTotalCountsForConditions(readCountMode);
             int overlappingRegion = -1;
             for (int or = 0; or < region.getNumParts(); or++) {
                 if (region.getPart(or).asRegion().contains(pos)) {
@@ -493,9 +516,9 @@ public class TiSSUtils {
                 lengthOfPartsBefore += region.getPart(or).asRegion().getTotalLength();
             }
             int posIndex = lengthOfPartsBefore + (pos-region.getPart(overlappingRegion).getStart());
-            if (posIndex < 0 || posIndex >= region.getTotalLength()) {
-                return;
-            }
+//            if (posIndex < 0 || posIndex >= region.getTotalLength()) {
+//                return;
+//            }
             for (int c = 0; c < condIndex.length; c++) {
                 readCounts[c][posIndex] += counts[condIndex[c]];
             }
@@ -769,8 +792,8 @@ public class TiSSUtils {
         reads.ei(refTmp, region).forEachRemaining(r -> {
             int pos0 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
             int pos1 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
-            NumericArray c0 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
-            NumericArray c1 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
+            NumericArray c0 = NumericArray.createMemory(r.getData().getNumConditions(), NumericArray.NumericArrayType.Double);
+            NumericArray c1 = NumericArray.createMemory(r.getData().getNumConditions(), NumericArray.NumericArrayType.Double);
             for (int k = 0; k < r.getData().getDistinctSequences(); k++) {
                 if (hasEndMismatch(r.getData(), k, r.getRegion().getTotalLength(), strandness)) {
                     c1 = r.getData().addCountsForDistinct(k, c1, ReadCountMode.Weight);
@@ -854,8 +877,8 @@ public class TiSSUtils {
         reads.ei(refTmp, region).forEachRemaining(r -> {
             int pos0 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
             int pos1 = strandness.equals(Strandness.Antisense) ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
-            NumericArray c0 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
-            NumericArray c1 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
+            NumericArray c0 = NumericArray.createMemory(r.getData().getNumConditions(), NumericArray.NumericArrayType.Double);
+            NumericArray c1 = NumericArray.createMemory(r.getData().getNumConditions(), NumericArray.NumericArrayType.Double);
             for (int k = 0; k < r.getData().getDistinctSequences(); k++) {
                 if (hasEndMismatch(r.getData(), k, r.getRegion().getTotalLength(), strandness)) {
                     c1 = r.getData().addCountsForDistinct(k, c1, ReadCountMode.Weight);
@@ -1109,7 +1132,13 @@ public class TiSSUtils {
         return readCount.get();
     }
 
-    public static double getReadCountFivePrime(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness) {
+    public static double getMaxReadCountFivePrime(GenomicRegionStorage<AlignedReadsData> reads, int cond, ReferenceSequence ref, Strandness strandness, GenomicRegion region) {
+        NumericArray ary = NumericArray.createMemory(region.getTotalLength(), NumericArray.NumericArrayType.Float);
+        extractCountsFromSingleFile(ary, reads, cond, ref, strandness, region, ReadType.FIVE_PRIME);
+        return ArrayUtils.max(ary.toDoubleArray());
+    }
+
+    public static double getReadCountFivePrime(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness, ReadCountMode readCountMode) {
         AtomicReference<Double> readCount = new AtomicReference<>(0.0);
         ReferenceSequence refTmp = strandness == Strandness.Antisense ? ref.toOppositeStrand() : ref;
         cit.ei(refTmp, reg).filter(f -> {
@@ -1119,7 +1148,7 @@ public class TiSSUtils {
                 return reg.contains(GenomicRegionPosition.FivePrime.position(f));
             }
         }).forEachRemaining(r -> {
-            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            double[] counts = r.getData().getTotalCountsForConditions(readCountMode);
             for (int i : conditions) {
                 readCount.updateAndGet(v -> v + counts[i]);
             }
@@ -1127,11 +1156,25 @@ public class TiSSUtils {
         return readCount.get();
     }
 
-    public static double[] getReadCountForConditions(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness) {
+    public static double getCountFromRmq(DiskGenomicNumericProvider rmq, ReferenceSequence ref, GenomicRegion reg, final int[] conditions) {
+        double[] counts = new double[rmq.getNumDataRows()];
+        GenomicNumericProvider.PositionNumericIterator it = rmq.iterateValues(ref, reg);
+        while(it.hasNext()) {
+            it.nextInt();
+            ArrayUtils.add(counts, it.getValues(null));
+        }
+        double readCount = 0;
+        for (int c : conditions) {
+            readCount += counts[c];
+        }
+        return readCount;
+    }
+
+    public static double[] getReadCountForConditions(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness, ReadCountMode readCountMode) {
         double[] out= new double[conditions.length];
         ReferenceSequence refTmp = strandness == Strandness.Antisense ? ref.toOppositeStrand() : ref;
         cit.ei(refTmp, reg).forEachRemaining(r -> {
-            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            double[] counts = r.getData().getTotalCountsForConditions(readCountMode);
             for (int i = 0; i < conditions.length; i++) {
                 out[i] += counts[conditions[i]];
             }
@@ -1139,7 +1182,26 @@ public class TiSSUtils {
         return out;
     }
 
-    public static double[] getReadCountFivePrimeForConditions(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness) {
+    public static int getDistance(ReferenceGenomicRegion rgr1, ReferenceGenomicRegion rgr2) {
+        if (!rgr1.getReference().equals(rgr2.getReference())) {
+            return -1;
+        }
+
+        if (rgr1.getRegion().intersects(rgr2.getRegion())) {
+            return 0;
+        }
+        int s1 = rgr1.getRegion().getStart();
+        int s2 = rgr2.getRegion().getStart();
+        int e1 = rgr1.getRegion().getEnd();
+        int e2 = rgr2.getRegion().getEnd();
+        if (s1 < s2) {
+            return s2-e1;
+        } else {
+            return s1-e2;
+        }
+    }
+
+    public static double[] getReadCountFivePrimeForConditions(CenteredDiskIntervalTreeStorage<DefaultAlignedReadsData> cit, ReferenceSequence ref, GenomicRegion reg, int[] conditions, Strandness strandness, ReadCountMode readCountMode) {
         double[] out= new double[conditions.length];
         ReferenceSequence refTmp = strandness == Strandness.Antisense ? ref.toOppositeStrand() : ref;
         cit.ei(refTmp, reg).filter(f -> {
@@ -1149,7 +1211,7 @@ public class TiSSUtils {
                 return reg.contains(GenomicRegionPosition.FivePrime.position(f));
             }
         }).forEachRemaining(r -> {
-            double[] counts = r.getData().getTotalCountsForConditions(ReadCountMode.Weight);
+            double[] counts = r.getData().getTotalCountsForConditions(readCountMode);
             for (int i = 0; i < conditions.length; i++) {
                 out[i] += counts[conditions[i]];
             }
@@ -1160,17 +1222,17 @@ public class TiSSUtils {
     public static AlignedReadsData alignedReadsDataToOppositeStrand(AlignedReadsData data) {
         AlignedReadsDataFactory factory = new AlignedReadsDataFactory(data.getNumConditions(), data.hasNonzeroInformation());
 
-        factory.start();
+        factory.start(); // Start factory
         for (int d = 0; d < data.getDistinctSequences(); d++) {
-            factory.newDistinctSequence();
-            if (data.hasGeometry()) {
+            factory.newDistinctSequence(); // add distinct sequence
+            if (data.hasGeometry()) { // check if paired-end
                 factory.setGeometry(data.getGeometryBeforeOverlap(d), data.getGeometryOverlap(d), data.getGeometryAfterOverlap(d));
             }
             factory.setMultiplicity(data.getMultiplicity(d));
             if (data.hasWeights()) {
                 factory.setWeight(d, data.getWeight(d));
             }
-            if (data.hasNonzeroInformation()) {
+            if (data.hasNonzeroInformation()) { // check if sparse-data and set counts accordingly
                 for (int i : data.getNonzeroCountIndicesForDistinct(d)) {
                     factory.setCount(i, data.getCount(d, i));
                 }
@@ -1183,19 +1245,28 @@ public class TiSSUtils {
                     }
                 }
             }
-            for (AlignedReadsVariation var : data.getVariations(d)) {
+            for (AlignedReadsVariation var : data.getVariations(d)) { // convert variations to other strand.
+                // Careful: Positions of variations are in 5prime to 3prime orientation, which needs to be swapped.
                 if (var.isSoftclip()) {
                     AlignedReadsSoftclip softclip = (AlignedReadsSoftclip) var;
-                    factory.addVariation(new AlignedReadsSoftclip(softclip.getPosition()!=0, SequenceUtils.getDnaReverseComplement(softclip.getReadSequence()), softclip.isFromSecondRead()));
+                    factory.addVariation(new AlignedReadsSoftclip(softclip.getPosition()!=0,
+                                                                            SequenceUtils.getDnaReverseComplement(softclip.getReadSequence()),
+                                                                            softclip.isFromSecondRead()));
                 } else if (var.isMismatch()) {
                     AlignedReadsMismatch mismatch = (AlignedReadsMismatch) var;
-                    factory.addVariation(new AlignedReadsMismatch(data.getMappedLength(d) - mismatch.getPosition() - 1, SequenceUtils.getDnaReverseComplement(mismatch.getReferenceSequence()), SequenceUtils.getDnaReverseComplement(mismatch.getReadSequence()), mismatch.isFromSecondRead()));
+                    factory.addVariation(new AlignedReadsMismatch(data.getMappedLength(d) - mismatch.getPosition() - 1,
+                                                                            SequenceUtils.getDnaReverseComplement(mismatch.getReferenceSequence()),
+                                                                            SequenceUtils.getDnaReverseComplement(mismatch.getReadSequence()), mismatch.isFromSecondRead()));
                 } else if (var.isDeletion()) {
                     AlignedReadsDeletion deletion = (AlignedReadsDeletion) var;
-                    factory.addVariation(new AlignedReadsDeletion(data.getMappedLength(d) - deletion.getPosition() - 1, SequenceUtils.getDnaReverseComplement(deletion.getReferenceSequence()), deletion.isFromSecondRead()));
+                    factory.addVariation(new AlignedReadsDeletion(data.getMappedLength(d) - deletion.getPosition() - 1,
+                                                                            SequenceUtils.getDnaReverseComplement(deletion.getReferenceSequence()),
+                                                                            deletion.isFromSecondRead()));
                 } else if (var.isInsertion()) {
                     AlignedReadsInsertion insertion = (AlignedReadsInsertion) var;
-                    factory.addVariation(new AlignedReadsInsertion(data.getMappedLength(d) - insertion.getPosition() - 1, insertion.getReadSequence(), insertion.isFromSecondRead()));
+                    factory.addVariation(new AlignedReadsInsertion(data.getMappedLength(d) - insertion.getPosition() - 1,
+                                                                            insertion.getReadSequence(),
+                                                                            insertion.isFromSecondRead()));
                 }
             }
             if (data.hasId()) {
@@ -1209,6 +1280,170 @@ public class TiSSUtils {
 
     public static int[][] conditionMergeStringToIntArray(String toMerge) {
         return EI.wrap(StringUtils.split(toMerge, "/")).map(m -> EI.wrap(StringUtils.split(m, ",")).mapToInt(Integer::parseInt).toIntArray()).toArray(new int[0][]);
+    }
+
+    public static <T> ImmutableReferenceGenomicRegion<T> getClosestReferenceGenomicRegionDownstream(ReferenceGenomicRegion<?> rgr, GenomicRegionStorage<T> storage, int maxDist) {
+        return getClosestReferenceGenomicRegionDownstream(rgr.getReference(), rgr.getRegion(), storage, maxDist);
+    }
+
+    public static <T> ImmutableReferenceGenomicRegion<T> getClosestReferenceGenomicRegionDownstream(ReferenceSequence ref, GenomicRegion reg, GenomicRegionStorage<T> storage, int maxDist) {
+        ImmutableReferenceGenomicRegion<T> closest = null;
+
+        if (ref.isPlus()) {
+            ExtendedIterator<ImmutableReferenceGenomicRegion<T>> ei = storage.ei(ref, new ArrayGenomicRegion(reg.getEnd(), reg.getEnd() + maxDist)).filter(f -> f.getRegion().getStart() > reg.getEnd());
+            if (!ei.hasNext()) {
+                return closest;
+            }
+            closest = ei.next();
+            for (ImmutableReferenceGenomicRegion<T> current : ei.loop()) {
+                if (current.getRegion().getStart() - reg.getEnd() < closest.getRegion().getStart() - reg.getEnd()) {
+                    closest = current;
+                }
+            }
+        } else if (ref.isMinus()) {
+            ExtendedIterator<ImmutableReferenceGenomicRegion<T>> ei = storage.ei(ref, new ArrayGenomicRegion(reg.getStart() - maxDist, reg.getStart())).filter(f -> f.getRegion().getEnd() < reg.getStart());
+            if (!ei.hasNext()) {
+                return closest;
+            }
+            closest = ei.next();
+            for (ImmutableReferenceGenomicRegion<T> current : ei.loop()) {
+                if (reg.getStart() - current.getRegion().getEnd() < reg.getStart() - closest.getRegion().getEnd()) {
+                    closest = current;
+                }
+            }
+        } else {
+            throw new UnsupportedOperationException("Only plus or minus references allowed for now.");
+        }
+
+        return closest;
+    }
+
+    public static <T> List<ImmutableReferenceGenomicRegion<T>> getClosestDownstreamRgrInStorage(ReferenceGenomicRegion<?> rgr, GenomicRegionStorage<T> storage, int maxDist) {
+        List<ImmutableReferenceGenomicRegion<T>> closest = new ArrayList<>();
+
+        ArrayList<ImmutableReferenceGenomicRegion<T>> sorted = storage.ei(rgr.getDownstream(maxDist)).
+                filter(f -> f.getReference().isPlus() ? f.getRegion().getStart() > rgr.getRegion().getStart() : f.getRegion().getStop() < rgr.getRegion().getStop()).
+                sort(Comparator.comparingInt(s -> s.getReference().isPlus() ? s.getRegion().getStart() : -s.getRegion().getStop())).list();
+
+        if (sorted.size() == 0) {
+            return closest;
+        }
+
+        for (ImmutableReferenceGenomicRegion<T> e : sorted) {
+            if (closest.size() == 0) {
+                closest.add(e);
+                continue;
+            }
+            if (e.getReference().isPlus() ? e.getRegion().getStart() > closest.get(0).getRegion().getStart() : e.getRegion().getStop() < closest.get(0).getRegion().getStop()) {
+                break;
+            }
+            closest.add(e);
+        }
+
+        return closest;
+    }
+
+    public static class TtoCData {
+        public double totalT;
+        public double totalTtoC;
+        public Map<Integer, Double> tcPerReadCount;
+
+        public TtoCData() {
+            tcPerReadCount = new HashMap<>();
+        }
+
+        public double getTtoCRate() {
+            return totalT > 0 ? totalTtoC/totalT : 0;
+        }
+
+        public double getNoTcReadCount() {
+            if (!tcPerReadCount.containsKey(0)) {
+                return 0.d;
+            }
+            return tcPerReadCount.get(0);
+        }
+
+        public double getTcReadCount() {
+            double total = 0.d;
+            for (Integer i : tcPerReadCount.keySet()) {
+                if (i == 0) {
+                    continue;
+                }
+                total += tcPerReadCount.get(i);
+            }
+            return total;
+        }
+    }
+
+    public static TtoCData calculateTtoCcount(ReferenceSequence ref, GenomicRegion reg, GenomicRegionStorage<AlignedReadsData> cit, Genomic genomic, int condition, boolean onlyOverlap) {
+        TtoCData ttoCData = new TtoCData();
+        cit.ei(ref, reg).filter(f -> {
+            return reg.contains(GenomicRegionPosition.FivePrime.position(f));
+        }).filter(f-> {
+            return !onlyOverlap || f.getData().getGeometryOverlap(0) >= 1;
+        }).filter(f -> {
+            for (int d = 0; d < f.getData().getDistinctSequences(); d++) {
+                if (f.getData().getCount(d, condition, ReadCountMode.Weight) > 0) {
+                    return true;
+                }
+            }
+            return false;
+        }).forEachRemaining(r -> {
+            AlignedReadsData dat = r.getData();
+            double totalCondCount = dat.getTotalCountForCondition(condition, ReadCountMode.Weight);
+            double tcount = StringUtils.countChar(genomic.getSequence(r).subSequence(dat.getGeometryBeforeOverlap(0), dat.getGeometryBeforeOverlap(0) + dat.getGeometryOverlap(0)), 'T');
+            if (!onlyOverlap) {
+                tcount = StringUtils.countChar(genomic.getSequence(r), 'T');
+            }
+            ttoCData.totalT += (tcount * totalCondCount);
+            if (tcount == 0) {
+                return;
+            }
+            for (int d = 0; d < dat.getDistinctSequences(); d++) {
+                AlignedReadsVariation[] variations = dat.getVariations(d);
+                Set<Integer> pos = new HashSet<>();
+                double readTcCount = dat.getCount(d, condition, ReadCountMode.Weight);
+                int readTcNum = 0;
+                for (int v = 0; v < variations.length; v++) {
+                    if (!variations[v].isMismatch()) {
+                        continue;
+                    }
+//                    if (snps != null && snps.contains(r.getReference().getName() + ":" + r.getRegion().map(variations[v].getPosition()))) {
+//                        continue;
+//                    }
+                    if (variations[v].getReferenceSequence().length() > 1) {
+                        System.err.println(variations[v].getReferenceSequence());
+                    }
+                    if (!variations[v].isFromSecondRead() && variations[v].getReferenceSequence().charAt(0) == 'T' && variations[v].getReadSequence().charAt(0) == 'C') {
+                        if (pos.contains(variations[v].getPosition())) {
+                            ttoCData.totalTtoC += dat.getCount(d, condition, ReadCountMode.Weight);
+                            readTcNum++;
+                            pos.remove(variations[v].getPosition());
+                        } else if (!onlyOverlap && !dat.isPositionInOverlap(d, variations[v].getPosition())) {
+                            ttoCData.totalTtoC += dat.getCount(d, condition, ReadCountMode.Weight);
+                            readTcNum++;
+                        } else {
+                            pos.add(variations[v].getPosition());
+                        }
+                    }
+                    if (variations[v].isFromSecondRead() && variations[v].getReferenceSequence().charAt(0) == 'A' && variations[v].getReadSequence().charAt(0) == 'G') {
+                        if (pos.contains(variations[v].getPosition())) {
+                            ttoCData.totalTtoC += dat.getCount(d, condition, ReadCountMode.Weight);
+                            readTcNum++;
+                            pos.remove(variations[v].getPosition());
+                        } else if (!onlyOverlap && !dat.isPositionInOverlap(d, variations[v].getPosition())) {
+                            ttoCData.totalTtoC += dat.getCount(d, condition, ReadCountMode.Weight);
+                            readTcNum++;
+                        } else {
+                            pos.add(variations[v].getPosition());
+                        }
+                    }
+                }
+                double current = ttoCData.tcPerReadCount.getOrDefault(readTcNum, 0.0d);
+                ttoCData.tcPerReadCount.put(readTcNum, current + readTcCount);
+            }
+        });
+        return ttoCData;
     }
 
     // This function is used for the iTiSS-paper only and transforms data formats of ADAPT-CAGE, TSRFinder, TSSPredator into a uniform one

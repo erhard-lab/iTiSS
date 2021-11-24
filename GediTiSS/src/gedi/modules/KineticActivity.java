@@ -32,8 +32,9 @@ public class KineticActivity extends ModuleBase {
     private boolean useUpAndDownstream;
     private String writerPath;
     private LineWriter mlWriter;
+    private int minReadNum;
 
-    public KineticActivity(int windowSize, double significanceThresh, double pseudoCount, int cleanupThresh, boolean useML, boolean useUpAndDownstream, String prefix, Data lane, String name) {
+    public KineticActivity(int windowSize, double significanceThresh, double pseudoCount, int cleanupThresh, boolean useML, boolean useUpAndDownstream, int minReadNum, String prefix, Data lane, String name) {
         super(name, lane);
         this.windowSize = windowSize;
         this.significanceThresh = significanceThresh;
@@ -41,6 +42,7 @@ public class KineticActivity extends ModuleBase {
         this.useML = useML;
         this.cleanupThresh = cleanupThresh;
         this.useUpAndDownstream = useUpAndDownstream;
+        this.minReadNum = minReadNum;
         if (useML) {
             writerPath = prefix + "kineticThresholdData.tsv";
             mlWriter = new LineOrientedFile(writerPath).write();
@@ -87,7 +89,7 @@ public class KineticActivity extends ModuleBase {
 //                foundPeaksNew.put(i, info);
                     posPVal.add(new MutableTriple<>(i, p, ArrayUtils.max(peaks)));
                 }
-            } else if (p <= significanceThresh) {
+            } else if (p <= significanceThresh && ArrayUtils.max(peaks) >= minReadNum) {
                 Map<String,Double> infos = new HashMap<>();
                 infos.put(TissFile.P_VALUE_COLUMN_NAME, p);
                 infos.put(TissFile.READ_COUNT_COLUMN_NAME, ArrayUtils.max(peaks));
@@ -149,7 +151,7 @@ public class KineticActivity extends ModuleBase {
             }
 
             for (MutableTriple<Integer, Double, Double> tss : tss2val) {
-                if (tss.Item2 < upThresh) {
+                if (tss.Item2 < upThresh && tss.Item3 >= minReadNum) {
                     Map<String, Double> info = new HashMap<>();
                     info.put(TissFile.P_VALUE_COLUMN_NAME, tss.Item2);
                     info.put(TissFile.READ_COUNT_COLUMN_NAME, tss.Item3);

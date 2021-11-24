@@ -4,10 +4,13 @@ import gedi.core.reference.Chromosome;
 import gedi.core.reference.ReferenceSequence;
 import gedi.core.region.ArrayGenomicRegion;
 import gedi.core.region.GenomicRegion;
+import gedi.core.region.ImmutableReferenceGenomicRegion;
+import gedi.core.region.ReferenceGenomicRegion;
 import gedi.util.ArrayUtils;
 import gedi.util.StringUtils;
 import gedi.util.functions.EI;
 
+import java.io.IOException;
 import java.text.ParseException;
 import java.util.*;
 
@@ -43,6 +46,14 @@ public class TsrFileEntry {
         }
     }
 
+    public String toLocationString() {
+        return getReference().toPlusMinusString() + ":" + getOriginalRegion().toString2();
+    }
+
+    public ReferenceGenomicRegion<TsrFileEntry> toReferenceGenomicRegion() {
+        return new ImmutableReferenceGenomicRegion<>(getReference(), getOriginalRegion(), this);
+    }
+
     public TsrFileEntry merge(List<TsrFileEntry> others) {
         int start = EI.wrap(others).mapToInt(TsrFileEntry::getOriginalStart).min();
         int end = EI.wrap(others).mapToInt(TsrFileEntry::getOriginalEnd).max();
@@ -66,6 +77,10 @@ public class TsrFileEntry {
         return originalRegion.getEnd();
     }
 
+    public int getOriginalStop() {
+        return originalRegion.getStop();
+    }
+
     public int getOriginalStart() {
         return originalRegion.getStart();
     }
@@ -84,6 +99,55 @@ public class TsrFileEntry {
             readcounts[i] = tissEntries.get(i).getReadcount();
         }
         return readcounts;
+    }
+
+    public int computeNumberOfDisjunctPeaks() {
+        int count = 1;
+        List<TissFileEntry> tmp = new ArrayList<>(tissEntries);
+        tmp.sort(Comparator.comparingInt(TissFileEntry::getPosition));
+        int lastPosition = tmp.get(0).getPosition();
+        for (int i = 1; i < tmp.size(); i++) {
+            if (tmp.get(i).getPosition() - lastPosition > 1) {
+                count++;
+            }
+            lastPosition = tmp.get(i).getPosition();
+        }
+        return count;
+    }
+
+    // Per non-disjunct TiSS-clusters the max TiSS is returned
+    public double[] getReadCountsFromDisjunctPeaks() {
+        List<TissFileEntry> biggestDisjunctTiss = new ArrayList<>();
+        List<TissFileEntry> lastTiss = new ArrayList<>();
+        List<TissFileEntry> tmp = new ArrayList<>(tissEntries);
+        tmp.sort(Comparator.comparingInt(TissFileEntry::getPosition));
+        int lastPosition = tmp.get(0).getPosition();
+        lastTiss.add(tmp.get(0));
+        for (int i = 1; i < tmp.size(); i++) {
+            if (tmp.get(i).getPosition() - lastPosition > 1) {
+                biggestDisjunctTiss.add(lastTiss.stream().max(Comparator.comparingDouble(TissFileEntry::getReadcount)).get());
+                lastTiss = new ArrayList<>();
+            }
+            lastPosition = tmp.get(i).getPosition();
+            lastTiss.add(tmp.get(i));
+        }
+        biggestDisjunctTiss.add(lastTiss.stream().max(Comparator.comparingDouble(TissFileEntry::getReadcount)).get());
+        return biggestDisjunctTiss.stream().mapToDouble(TissFileEntry::getReadcount).toArray();
+    }
+
+    public double[] getReadCountsForId(int id) {
+        List<Double> lst = new ArrayList<>();
+        double[] rc = getReadCounts();
+        int[] ids = getOriginIds();
+        for (int i = 0; i < ids.length; i++) {
+            if (ids[i] == id) {
+                lst.add(rc[i]);
+            }
+        }
+        if (lst.size() == 0) {
+            return new double[0];
+        }
+        return lst.stream().mapToDouble(d -> d).toArray();
     }
 
     public double getMaxValueForId(int id) {
@@ -126,6 +190,21 @@ public class TsrFileEntry {
             maxTiss = tissEntries.get(i).getReadcount() > maxTiss.getReadcount() ? tissEntries.get(i) : maxTiss;
         }
         return maxTiss.getPosition();
+    }
+
+    public int getMaxReadCountTissPosForId(int id) {
+        TissFileEntry maxTiss = null;
+        for (int i = 0; i < tissEntries.size(); i++) {
+            if (tissEntries.get(i).getOriginId() != id) {
+                continue;
+            }
+            if (maxTiss == null) {
+                maxTiss = tissEntries.get(i);
+                continue;
+            }
+            maxTiss = tissEntries.get(i).getReadcount() > maxTiss.getReadcount() ? tissEntries.get(i) : maxTiss;
+        }
+        return maxTiss == null ? -1 : maxTiss.getPosition();
     }
 
     public boolean isValidatedByFile(String fileName) {
@@ -210,7 +289,7 @@ public class TsrFileEntry {
         return true;
     }
 
-    public static TsrFileEntry parse(String line) throws ParseException {
+    public static TsrFileEntry parse(String line) throws IOException {
         String[] split = StringUtils.split(line, "\t");
         ReferenceSequence ref = Chromosome.obtain(split[0]);
         GenomicRegion reg = GenomicRegion.parse(split[1]);
@@ -219,7 +298,7 @@ public class TsrFileEntry {
         int[] originIds = EI.wrap(StringUtils.split(split[4],",")).mapToInt(Integer::parseInt).toIntArray();
         int[] positions = EI.wrap(StringUtils.split(split[5],",")).mapToInt(Integer::parseInt).toIntArray();
         if (readcounts.length != values.length || values.length != originIds.length || originIds.length != positions.length) {
-            throw new ParseException(line, 0);
+            throw new IOException(line);
         }
         List<TissFileEntry> entries = new ArrayList<>();
         for (int i = 0; i < readcounts.length; i++) {

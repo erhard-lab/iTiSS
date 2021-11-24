@@ -2,6 +2,7 @@ package gedi.utils;
 
 import gedi.util.ArrayUtils;
 
+import java.util.Arrays;
 import java.util.function.Function;
 
 public class ArrayUtils2 {
@@ -67,6 +68,13 @@ public class ArrayUtils2 {
             out[i] = ary[i] - sub;
         }
         return out;
+    }
+
+    public static double mean(double[] ary) {
+        if (ary.length == 0) {
+            return 0;
+        }
+        return Arrays.stream(ary).sum() / ary.length;
     }
 
     /**

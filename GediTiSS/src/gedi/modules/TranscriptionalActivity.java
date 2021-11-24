@@ -30,14 +30,16 @@ public class TranscriptionalActivity extends ModuleBase {
     private int cleanupThresh;
     private String writerPath;
     private LineWriter mlWriter;
+    private int minReadNum;
 
-    public TranscriptionalActivity(double significanceThresh, int windowSize, double minReadDensity, int cleanupThresh, boolean useML, String prefix, Data lane, String name) {
+    public TranscriptionalActivity(double significanceThresh, int windowSize, double minReadDensity, int cleanupThresh, int minReadNum, boolean useML, String prefix, Data lane, String name) {
         super(name, lane);
         this.significanceThresh = significanceThresh;
         this.windowSize = windowSize;
         this.useML = useML;
         this.minReadDensity = minReadDensity;
         this.cleanupThresh = cleanupThresh;
+        this.minReadNum = minReadNum;
         if (useML) {
             writerPath = prefix + "densityThresholdData.tsv";
             mlWriter = new LineOrientedFile(writerPath).write();
@@ -75,6 +77,7 @@ public class TranscriptionalActivity extends ModuleBase {
             if (useML && i%10000000 == 0) {
                 System.err.print("Progress " + i + "/" + data.length() + ", mmData size: " + posPVal.size() + "\r");
             }
+
             if (zeroReadsInRightWindow < windowDownstream.getSize()) {
                 if (zeroReadsInRightWindow / (double) windowSize < 1. - minReadDensity) {
                     threshold = threshold < 1. ? 1 : threshold;
@@ -98,7 +101,7 @@ public class TranscriptionalActivity extends ModuleBase {
 //                        info.put("pValue", p);
 //                        foundPeaksNew.put(i, info);
                         }
-                    } else if (p <= significanceThresh && d > b) {
+                    } else if (p <= significanceThresh && d > b && data.getDouble(i) >= minReadNum) {
                         Map<String, Double> infos = new HashMap<>();
                         infos.put(TissFile.P_VALUE_COLUMN_NAME, p);
                         infos.put(TissFile.READ_COUNT_COLUMN_NAME, data.getDouble(i));
@@ -187,7 +190,7 @@ public class TranscriptionalActivity extends ModuleBase {
             }
 
             for (MutableTriple<Integer, Double, Double> tss : tss2val) {
-                if (tss.Item2 < upThresh) {
+                if (tss.Item2 < upThresh && tss.Item3 >= minReadNum) {
                     Map<String, Double> info = new HashMap<>();
                     info.put(TissFile.P_VALUE_COLUMN_NAME, tss.Item2);
                     info.put(TissFile.READ_COUNT_COLUMN_NAME, tss.Item3);

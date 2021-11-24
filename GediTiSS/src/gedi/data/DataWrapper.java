@@ -225,14 +225,14 @@ public class DataWrapper {
     private NumericArray[] loadMultiReadCountsToMemoryFromSingleFile(List<Integer> citAccessIndeces, GenomicRegionStorage<AlignedReadsData> cit, ReferenceSequence ref, int refLength) {
         NumericArray[] readCounts = new NumericArray[citAccessIndeces.size()];
         for (int i = 0; i < readCounts.length; i++) {
-            readCounts[i] = NumericArray.createMemory(refLength, NumericArray.NumericArrayType.Float);
+            readCounts[i] = NumericArray.createMemory(refLength, NumericArray.NumericArrayType.Double);
         }
         final boolean switchFiveAndThreePrimeEnd = strandness == Strandness.Antisense && readType == ReadType.FIVE_PRIME || strandness == Strandness.Sense && readType == ReadType.THREE_PRIME;
         cit.ei(strandness.equals(Strandness.Antisense) ? ref.toOppositeStrand() : ref).forEachRemaining(r -> {
             int pos0 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r) : GenomicRegionPosition.FivePrime.position(r);
             int pos1 = switchFiveAndThreePrimeEnd ? GenomicRegionPosition.ThreePrime.position(r, 1) : GenomicRegionPosition.FivePrime.position(r, 1);
-            NumericArray c0 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
-            NumericArray c1 = NumericArray.createMemory(0, NumericArray.NumericArrayType.Float);
+            NumericArray c0 = NumericArray.createMemory(r.getData().getNumConditions(), NumericArray.NumericArrayType.Double);
+            NumericArray c1 = NumericArray.createMemory(r.getData().getNumConditions(), NumericArray.NumericArrayType.Double);
             for (int k = 0; k < r.getData().getDistinctSequences(); k++) {
                 if (hasEndMismatch(r.getData(), k, r.getRegion().getTotalLength())) {
                     c1 = r.getData().addCountsForDistinct(k, c1, ReadCountMode.Weight);

@@ -45,6 +45,7 @@ public class TiSSController extends GediProgram {
         addInput(params.testChromosomes);
         addInput(params.readType);
         addInput(params.useUpAndDownstream);
+        addInput(params.minReadNum);
 
         addInput(params.prefix);
 
@@ -75,10 +76,17 @@ public class TiSSController extends GediProgram {
         String testChromosomes = getParameter(15);
         ReadType readType = getParameter(16);
         boolean useUpAndDownstream = getParameter(17);
+        int minReadNum = getParameter(18);
 
-        String prefix = getParameter(18);
+        String prefix = getParameter(19);
 
         final boolean useMultiCourse = timecourses != null && !timecourses.isEmpty();
+
+        if (replicates == null || replicates.isEmpty()) {
+            context.getLog().severe("The parameter -rep is missing!!");
+            context.getLog().severe("If you are running iTiSS on a single dataset, simply add '-rep X' to your call.");
+            context.getLog().severe("If you are running it on multiple datasets at once, please visit the Wiki on GitHub.");
+        }
 
         int[][] reps = TiSSUtils.extractReplicatesFromString(replicates, SKIP_CHAR);
 
@@ -120,19 +128,19 @@ public class TiSSController extends GediProgram {
             switch (modType) {
                 case DENSITY:
                     context.getLog().info("Adding Density module");
-                    singleLanes.forEach(d -> analyzer.addModule(new TranscriptionalActivity(pValThresh, windowSize, minReadDens, cleanupThresh, useMM, prefix, d, "DENSITY")));
+                    singleLanes.forEach(d -> analyzer.addModule(new TranscriptionalActivity(pValThresh, windowSize, minReadDens, cleanupThresh, minReadNum, useMM, prefix, d, "DENSITY")));
                     break;
                 case KINETIC:
                     context.getLog().info("Adding Kinetic module");
-                    multiLanes.forEach(d -> analyzer.addModule(new KineticActivity(windowSize, pValThresh, pseudoCount, cleanupThresh, useMM, useUpAndDownstream, prefix, d, "KINETIC")));
+                    multiLanes.forEach(d -> analyzer.addModule(new KineticActivity(windowSize, pValThresh, pseudoCount, cleanupThresh, useMM, useUpAndDownstream, minReadNum, prefix, d, "KINETIC")));
                     break;
                 case SPARSE_PEAK:
                     context.getLog().info("Adding sparse peak module");
-                    singleLanes.forEach(d -> analyzer.addModule(new DRnaModule(windowSize, pseudoCount, peakFCThreshold, cleanupThresh, d, useMM, "SPARSE_PEAK")));
+                    singleLanes.forEach(d -> analyzer.addModule(new DRnaModule(windowSize, pseudoCount, peakFCThreshold, cleanupThresh, minReadNum, d, useMM, "SPARSE_PEAK")));
                     break;
                 case DENSE_PEAK:
                     context.getLog().info("Adding dense peak module");
-                    singleLanes.forEach(d -> analyzer.addModule(new CRnaModule(iqr, pseudoCount, windowSize, cleanupThresh, d, useMM, "DENSE_PEAK")));
+                    singleLanes.forEach(d -> analyzer.addModule(new CRnaModule(iqr, pseudoCount, windowSize, cleanupThresh, minReadNum, d, useMM, "DENSE_PEAK")));
                     break;
                 case EQUAL_TRANSCRIPTION:
                     context.getLog().info("Adding equal transcription module");

@@ -27,14 +27,16 @@ public class DRnaModule extends ModuleBase {
     private double peakCallThreshold;
     private boolean machineLearning;
     private int cleanupThresh;
+    private int minReadNum;
 
-    public DRnaModule(int windowSize, double pseudoCount, double peakCallThreshold, int cleanupThresh, Data lane, boolean useMM, String name) {
+    public DRnaModule(int windowSize, double pseudoCount, double peakCallThreshold, int cleanupThresh, int minReadNum, Data lane, boolean useMM, String name) {
         super(name, lane);
         this.windowSize = windowSize;
         this.pseudoCount = pseudoCount;
         this.peakCallThreshold = peakCallThreshold;
         this.machineLearning = useMM;
         this.cleanupThresh = cleanupThresh;
+        this.minReadNum = minReadNum;
     }
 
     @Override
@@ -69,7 +71,7 @@ public class DRnaModule extends ModuleBase {
                     mmData.add(new PeakAndPos(i, log2(xrn1.getDouble(i) / thresholdPeak)));
                 }
             } else {
-                if (thresholdPeak >= pseudoCount && xrn1.getDouble(i) > peakCallThreshold * thresholdPeak) {
+                if (thresholdPeak >= pseudoCount && xrn1.getDouble(i) > peakCallThreshold * thresholdPeak && xrn1.getDouble(i) >= minReadNum) {
                     Map<String, Double> infos = new HashMap<>();
                     infos.put("peak height", xrn1.getDouble(i));
                     infos.put("threshold peak height", thresholdPeak);
@@ -120,7 +122,7 @@ public class DRnaModule extends ModuleBase {
     @Override
     public void calculateMLResults(String prefix, boolean plot) throws IOException {
         LineWriter writerup = new LineOrientedFile(prefix + "sparsePeakThresholdData.tsv").write();
-        writerup.writeLine("Ref\tPos\tValue");
+        writerup.writeLine("Ref\tPos\t" + TissFile.FOLD_CHANGE_COLUMN_NAME + "\t" + TissFile.READ_COUNT_COLUMN_NAME);
 
         List<PeakAndPos> mlData = new ArrayList<>();
         for (ReferenceSequence ref : res.keySet()) {
@@ -128,7 +130,7 @@ public class DRnaModule extends ModuleBase {
             for (int tssPos : tss.keySet()) {
                 Map<String, Double> info = tss.get(tssPos);
                 mlData.add(new PeakAndPos(tssPos, info.get(TissFile.FOLD_CHANGE_COLUMN_NAME)));
-                writerup.writeLine(ref.toPlusMinusString() + "\t" + tssPos + "\t" + info.get(TissFile.FOLD_CHANGE_COLUMN_NAME));
+                writerup.writeLine(ref.toPlusMinusString() + "\t" + tssPos + "\t" + info.get(TissFile.FOLD_CHANGE_COLUMN_NAME) + "\t" + info.get(TissFile.READ_COUNT_COLUMN_NAME));
             }
         }
         writerup.close();
@@ -153,7 +155,7 @@ public class DRnaModule extends ModuleBase {
             }
 
             for (int tss : tss2val.keySet()) {
-                if (tss2val.get(tss).get(TissFile.FOLD_CHANGE_COLUMN_NAME) > upThresh) {
+                if (tss2val.get(tss).get(TissFile.FOLD_CHANGE_COLUMN_NAME) > upThresh && tss2val.get(tss).get(TissFile.READ_COUNT_COLUMN_NAME) >= minReadNum) {
                     filtered.put(tss, tss2val.get(tss));
                 }
             }

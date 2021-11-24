@@ -20,13 +20,21 @@ df$x = 1:length(df[,1])
 df$up = sort(df[,3])
 df$down = sort(df[,4])
 
-newfile = df[(df$up > customThreshUp & df$down > customThreshDown),]
+newfile = df[(df[,3] > customThreshUp & df[,4] > customThreshDown),]
 write.table(newfile, file=paste(manualSelectionFile, sep=""), row.names=FALSE, col.names=TRUE, quote=FALSE, sep="\t")
-pdf(manualSelectionPdf)
+if (length(df[,1]) > 10000) {
+    png(paste(manualSelectionPdf, ".png", sep=""), width=1024, height=768)
+} else {
+    pdf(manualSelectionPdf)
+}
 print(ggplot(df, aes(x=x, y=up)) + geom_point() + geom_hline(aes(yintercept=customThreshUp, color="red")))
 print(ggplot(df, aes(x=x, y=down)) + geom_point() + geom_hline(aes(yintercept=customThreshDown, color="red")))
 dev.off()
-pdf(pdfFile)
+if (length(df[,1]) > 10000) {
+    png(paste(pdfFile, ".png", sep=""), width=1024, height=768)
+} else {
+    pdf(pdfFile)
+}
 print(ggplot(df, aes(x=x, y=up)) + geom_point() + geom_hline(aes(yintercept=upThreshAutoParam, color="red")))
 print(ggplot(df, aes(x=x, y=down)) + geom_point() + geom_hline(aes(yintercept=downThreshAutoParam, color="red")))
 dev.off()

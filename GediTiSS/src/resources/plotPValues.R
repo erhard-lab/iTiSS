@@ -20,9 +20,17 @@ df$x = 1:length(df[,1])
 df$y = sort(df[,3])
 newfile = df[df[,3] > customThresh,]
 write.table(newfile, file=paste(manualSelectionFile, sep=""), row.names=FALSE, col.names=TRUE, quote=FALSE, sep="\t")
-pdf(manualSelectionPdf)
+if (length(df[,1]) > 10000) {
+    png(paste(manualSelectionPdf, ".png", sep=""), width=1024, height=768)
+} else {
+    pdf(manualSelectionPdf)
+}
 print(ggplot(df, aes(x=x, y=y)) + geom_point() + geom_hline(aes(yintercept=customThresh, color="red")))
 dev.off()
-pdf(pdfFile)
+if (length(df[,1]) > 10000) {
+    png(paste(pdfFile, ".png", sep=""), width=1024, height=768)
+} else {
+    pdf(pdfFile)
+}
 print(ggplot(df, aes(x=x, y=y)) + geom_point() + geom_hline(aes(yintercept=threshAutoParam, color="red")))
 dev.off()

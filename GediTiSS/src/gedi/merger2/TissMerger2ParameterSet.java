@@ -13,6 +13,7 @@ public class TissMerger2ParameterSet extends GediParameterSet {
     // General stuff
     public GediParameter<String> prefix = new GediParameter<String>(this,"prefix", "The prefix used for all output files", false, new StringParameterType());
     public GediParameter<File> paramFile = new GediParameter<File>(this,"${prefix}.param", "File containing the parameters used to call TiSS", false, new FileParameterType());
+    public GediParameter<File> runtimeFile = new GediParameter<File>(this,"${prefix}.runtime", "File containing the runtime information", false, new FileParameterType());
 
     public GediParameter<String> inTissFiles = new GediParameter<String>(this,"inTiss", "input files from iTiSS", true, new StringParameterType(), null, true);
     public GediParameter<String> inTsrFiles = new GediParameter<String>(this,"inTsr", "input files from TissMerger2", true, new StringParameterType(), null, true);

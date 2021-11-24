@@ -29,5 +29,6 @@
       </library>
     </orderEntry>
     <orderEntry type="module" module-name="GediBam" />
+    <orderEntry type="module" module-name="GediSlam" />
   </component>
 </module>

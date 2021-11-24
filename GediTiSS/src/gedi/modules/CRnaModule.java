@@ -28,8 +28,9 @@ public class CRnaModule extends ModuleBase{
     private boolean useMM;
     private double pseudoCount;
     private int cleanupThresh;
+    private int minReadNum;
 
-    public CRnaModule(double zScoreThresh, double pseudoCount, int windowSize, int cleanupThresh, Data lane,
+    public CRnaModule(double zScoreThresh, double pseudoCount, int windowSize, int cleanupThresh, int minReadNum, Data lane,
                       boolean useMM, String name) {
         super(name, lane);
         this.zScoreThresh = zScoreThresh;
@@ -37,6 +38,7 @@ public class CRnaModule extends ModuleBase{
         this.pseudoCount = pseudoCount;
         this.useMM = useMM;
         this.cleanupThresh = cleanupThresh;
+        this.minReadNum = minReadNum;
     }
 
     @Override
@@ -50,8 +52,8 @@ public class CRnaModule extends ModuleBase{
         double[] upstream = data.toDoubleArray(0, windowSize);
         double[] downstream = data.toDoubleArray(windowSize+1, windowSize*2+1);
         for (int i = 0; i < windowSize; i++) {
-            upstream[i] = Math.log(upstream[i] + pseudoCount);
-            downstream[i] = Math.log(downstream[i] + pseudoCount);
+            upstream[i] = upstream[i] + pseudoCount;
+            downstream[i] = downstream[i] + pseudoCount;
         }
 
         StaticSizeSortedArrayList<Double> windowUpstream = new StaticSizeSortedArrayList<>(EI.wrap(upstream).toList(), Double::compareTo);
@@ -77,7 +79,7 @@ public class CRnaModule extends ModuleBase{
                 //System.err.print("Progress " + i + "/" + data.length() + ", mmDataL size: " + mmDataL.size() + ", mmDataR size: " + mmDataR.size() + ", upstream: " + sumUpstream + ", downstream: " + sumDownstream + "\r");
                 System.err.print(String.format("Progress %d / %d, mmDataL size: %d, mmDataR size: %d, upstream: %.2f, downstream: %.2f \r", i, data.length(), mmDataL.size(), mmDataR.size(), sumUpstream, sumDownstream));
             }
-            double valueOfInterest = Math.log(data.getDouble(i) + pseudoCount);
+            double valueOfInterest = data.getDouble(i) + pseudoCount;
             if (sdUpsteam <= pseudoCount) {
                 sdUpsteam = pseudoCount;
             }
@@ -88,12 +90,12 @@ public class CRnaModule extends ModuleBase{
             double upstreamZ = (valueOfInterest - meanUpstream) / sdUpsteam;
             double downstreamZ = (valueOfInterest - meanDownstream) / sdDownsteam;
             if (useMM && mmDataL != null) {
-                if (upstreamZ > 2.5 && downstreamZ > 2.5) {
+                if (upstreamZ > 2 && downstreamZ > 2) {
                     mmDataL.add(new PeakAndPos(i, upstreamZ));
                     mmDataR.add(new PeakAndPos(i, downstreamZ));
                 }
             } else {
-                if (upstreamZ > zScoreThresh && downstreamZ > zScoreThresh) {
+                if (upstreamZ > zScoreThresh && downstreamZ > zScoreThresh && data.getDouble(i) >= minReadNum) {
                     Map<String, Double> infos = new HashMap<>();
                     infos.put("zScore-US", upstreamZ);
                     infos.put("zScore-DS", downstreamZ);
@@ -103,16 +105,23 @@ public class CRnaModule extends ModuleBase{
                 }
             }
 
+            boolean indelSuccess;
             if (ref.isPlus()) {
-                windowUpstream.insertSortedAndDelete(Math.log(data.getDouble(i) + pseudoCount), Math.log(data.getDouble(i - windowSize) + pseudoCount));
-                windowDownstream.insertSortedAndDelete(Math.log(data.getDouble(i + windowSize + 1) + pseudoCount), Math.log(data.getDouble(i + 1) + pseudoCount));
+                indelSuccess = windowUpstream.insertSortedAndDelete(data.getDouble(i) + pseudoCount, data.getDouble(i - windowSize) + pseudoCount);
+                indelSuccess &= windowDownstream.insertSortedAndDelete(data.getDouble(i + windowSize + 1) + pseudoCount, data.getDouble(i + 1) + pseudoCount);
+                sumUpstream = (sumUpstream - (data.getDouble(i-windowSize)+pseudoCount)) + data.getDouble(i)+pseudoCount;
+                sumDownstream = (sumDownstream - (data.getDouble(i+1)+pseudoCount)) + data.getDouble(i+windowSize+1)+pseudoCount;
             } else {
-                windowDownstream.insertSortedAndDelete(Math.log(data.getDouble(i) + pseudoCount), Math.log(data.getDouble(i - windowSize) + pseudoCount));
-                windowUpstream.insertSortedAndDelete(Math.log(data.getDouble(i + windowSize + 1) + pseudoCount), Math.log(data.getDouble(i + 1) + pseudoCount));
+                indelSuccess = windowDownstream.insertSortedAndDelete(data.getDouble(i) + pseudoCount, data.getDouble(i - windowSize) + pseudoCount);
+                indelSuccess &= windowUpstream.insertSortedAndDelete(data.getDouble(i + windowSize + 1) + pseudoCount, data.getDouble(i + 1) + pseudoCount);
+                sumDownstream = (sumUpstream - (data.getDouble(i-windowSize)+pseudoCount)) + data.getDouble(i)+pseudoCount;
+                sumUpstream = (sumDownstream - (data.getDouble(i+1)+pseudoCount)) + data.getDouble(i+windowSize+1)+pseudoCount;
             }
 
-            sumUpstream = (sumUpstream - Math.log(data.getDouble(i-windowSize)+pseudoCount)) + Math.log(data.getDouble(i)+pseudoCount);
-            sumDownstream = (sumDownstream - Math.log(data.getDouble(i+1)+pseudoCount)) + Math.log(data.getDouble(i+windowSize+1)+pseudoCount);
+            if (!indelSuccess) {
+                System.err.println("Error while trying to delete value. Index: " + i);
+            }
+
             meanUpstream = sumUpstream/(windowUpstream.getSize()-1);
             meanDownstream = sumDownstream/(windowDownstream.getSize()-1);
             sdUpsteam = sampleSd(windowUpstream,sumUpstream/windowUpstream.getSize());
@@ -150,7 +159,7 @@ public class CRnaModule extends ModuleBase{
     @Override
     public void calculateMLResults(String prefix, boolean plot) throws IOException {
         LineWriter writerup = new LineOrientedFile(prefix + "densePeakThresholdData.tsv").write();
-        writerup.writeLine("Ref\tPos\tValue1\tValue2");
+        writerup.writeLine("Ref\tPos\tValue1\tValue2\t" + TissFile.Z_SCORE_COLUMN_NAME + "\t" + TissFile.READ_COUNT_COLUMN_NAME);
 
         List<PeakAndPos> mlDataUp = new ArrayList<>();
         List<PeakAndPos> mlDataDown = new ArrayList<>();
@@ -160,7 +169,7 @@ public class CRnaModule extends ModuleBase{
                 Map<String, Double> info = tss.get(tssPos);
                 mlDataUp.add(new PeakAndPos(tssPos, info.get("zScore-US")));
                 mlDataDown.add(new PeakAndPos(tssPos, info.get("zScore-DS")));
-                writerup.writeLine(ref.toPlusMinusString() + "\t" + tssPos + "\t" + info.get("zScore-US") + "\t" + info.get("zScore-DS"));
+                writerup.writeLine(ref.toPlusMinusString() + "\t" + tssPos + "\t" + info.get("zScore-US") + "\t" + info.get("zScore-DS") + "\t" + info.get(TissFile.Z_SCORE_COLUMN_NAME) + "\t" + info.get(TissFile.READ_COUNT_COLUMN_NAME));
             }
         }
         writerup.close();
@@ -191,7 +200,7 @@ public class CRnaModule extends ModuleBase{
                 tss2val = tss2valFiltered;
             }
             for (int tss : tss2val.keySet()) {
-                if (tss2val.get(tss).containsKey("zScore-US") && tss2val.get(tss).containsKey("zScore-DS") && tss2val.get(tss).get("zScore-US") > upThresh && tss2val.get(tss).get("zScore-DS") > downThresh) {
+                if (tss2val.get(tss).containsKey("zScore-US") && tss2val.get(tss).containsKey("zScore-DS") && tss2val.get(tss).get("zScore-US") > upThresh && tss2val.get(tss).get("zScore-DS") > downThresh && tss2val.get(tss).get(TissFile.READ_COUNT_COLUMN_NAME) >= minReadNum) {
                     filtered.put(tss, tss2val.get(tss));
                 }
             }

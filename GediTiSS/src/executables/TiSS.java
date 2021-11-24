@@ -17,6 +17,6 @@ public class TiSS {
                 new TiSSController(params));
 
         GediProgram.run(tiss, params.paramFile, new CommandLineHandler("TiSS",
-                "TiSS is used for TiSS-detection in dRNA-seq and cRNA-seq datasets", args));
+                "TiSS is used for TiSS-detection in TiSS-profiling datasets", args));
     }
 }

@@ -1,5 +1,6 @@
 package gedi.utils;
 
+import gedi.util.StringUtils;
 import gedi.util.functions.EI;
 
 import java.util.ArrayList;
@@ -129,5 +130,9 @@ public class StringUtils2 {
             out[i] = seq[(indices[i])];
         }
         return out;
+    }
+
+    public static String concat(String glue, String... strings) {
+        return StringUtils.concat(glue, strings);
     }
 }

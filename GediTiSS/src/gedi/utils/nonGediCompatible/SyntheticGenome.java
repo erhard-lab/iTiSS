@@ -29,6 +29,9 @@ public class SyntheticGenome {
     }
 
     private static void createPlusAndMinusTranscripts(String name, int length, Genomic genomic, List<ReferenceGenomicRegion<Transcript>> lst) {
+        if (name.toLowerCase().startsWith("chr")) {
+            name = name.substring(3);
+        }
         SeqProvider seqProvider = new SeqProvider(name, length);
         genomic.add(seqProvider);
         ReferenceGenomicRegion<Transcript> plus = new ImmutableReferenceGenomicRegion<Transcript>(Chromosome.obtain(name + "+"),

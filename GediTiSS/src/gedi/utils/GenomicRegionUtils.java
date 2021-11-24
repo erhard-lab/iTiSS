@@ -3,6 +3,10 @@ package gedi.utils;
 import gedi.core.reference.ReferenceSequence;
 import gedi.core.region.ArrayGenomicRegion;
 import gedi.core.region.GenomicRegion;
+import gedi.core.region.ImmutableReferenceGenomicRegion;
+import gedi.core.region.ReferenceGenomicRegion;
+
+import java.lang.ref.Reference;
 
 public class GenomicRegionUtils {
     public static boolean isContainedInIntron(GenomicRegion region, int pos) {
@@ -60,6 +64,46 @@ public class GenomicRegionUtils {
             return new ArrayGenomicRegion(tss, tts + 1);
         } else {
             return new ArrayGenomicRegion(tts, tss + 1);
+        }
+    }
+
+    public static String toStringReversed(GenomicRegion region) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = region.getNumParts()-1; i >= 0; i--) {
+            sb.append(region.getPart(i).getEnd()).append("-").append(region.getPart(i).getStart());
+            if (i != 0) {
+                sb.append("|");
+            }
+        }
+        return sb.toString();
+    }
+
+    public static String toLocationStringReversed(ReferenceGenomicRegion rgr) {
+        return rgr.getReference().toPlusMinusString() + ":" + toStringReversed(rgr.getRegion());
+    }
+
+    public static GenomicRegion move(GenomicRegion regToMove, int positionsToMove) {
+        int[] newcoords = new int[regToMove.getNumParts()*2];
+        for (int i = 0; i < regToMove.getNumParts(); i++) {
+            newcoords[i*2] = regToMove.getStart(i) + positionsToMove;
+            newcoords[i*2+1] = regToMove.getEnd(i) + positionsToMove;
+        }
+        return new ArrayGenomicRegion(newcoords);
+    }
+
+    public static <T> ReferenceGenomicRegion<T> moveUpstream(ReferenceGenomicRegion<T> rgr, int positionsToMove) {
+        if (rgr.getReference().isPlus() || rgr.getReference().isIndependent()) {
+            return new ImmutableReferenceGenomicRegion<>(rgr.getReference(), move(rgr.getRegion(), -positionsToMove), rgr.getData());
+        } else {
+            return new ImmutableReferenceGenomicRegion<>(rgr.getReference(), move(rgr.getRegion(), positionsToMove), rgr.getData());
+        }
+    }
+
+    public static <T> ReferenceGenomicRegion<T> moveDownstream(ReferenceGenomicRegion<T> rgr, int positionsToMove) {
+        if (rgr.getReference().isPlus() || rgr.getReference().isIndependent()) {
+            return new ImmutableReferenceGenomicRegion<>(rgr.getReference(), move(rgr.getRegion(), positionsToMove), rgr.getData());
+        } else {
+            return new ImmutableReferenceGenomicRegion<>(rgr.getReference(), move(rgr.getRegion(), -positionsToMove), rgr.getData());
         }
     }
 }

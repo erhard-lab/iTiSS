@@ -17,6 +17,7 @@ public class TiSSParameterSet extends GediParameterSet {
     // General stuff
     public GediParameter<String> prefix = new GediParameter<String>(this,"prefix", "The prefix used for all output files", false, new StringParameterType());
     public GediParameter<File> paramFile = new GediParameter<File>(this,"${prefix}.param", "File containing the parameters used to call TiSS", false, new FileParameterType());
+    public GediParameter<File> runtimeFile = new GediParameter<File>(this,"${prefix}.runtime", "File containing the runtime information", false, new FileParameterType());
 
     // General parameters
     public GediParameter<GenomicRegionStorage<AlignedReadsData>> reads = new GediParameter<GenomicRegionStorage<AlignedReadsData>>(this,"reads", "Read data in CIT-format.", true, new StorageParameterType<AlignedReadsData>());
@@ -28,6 +29,7 @@ public class TiSSParameterSet extends GediParameterSet {
     public GediParameter<Double> pseudoCount = new GediParameter<Double>(this,"pseudo", "A pseudo count be added to each position", false, new DoubleParameterType(), 1., true);
     public GediParameter<Integer> cleanupThresh = new GediParameter<Integer>(this,"cleanupThresh", "Threshold at which multi-occurrences of a value will be filtered out", false, new IntParameterType(), 100, true);
     public GediParameter<String> testChromosomes = new GediParameter<String>(this,"testChr", "The chromosomes to use (for testing purposes, individual chromosomes separated by comma, i.e. 1+,1-,...)", false, new StringParameterType(), true);
+    public GediParameter<Integer> minReadNum = new GediParameter<Integer>(this,"minReadNum", "Minimum amount of reads to call a TiSS", false, new IntParameterType(), 0, true);
 
     // GenomicCreate
     public GediParameter<String> chromSizes = new GediParameter<String>(this,"chromSizes", "tsv file containing the sizes of each chromosome", true, new StringParameterType(), true);
@@ -65,7 +67,7 @@ public class TiSSParameterSet extends GediParameterSet {
     public GediParameter<Boolean> dumpAllValues = new GediParameter<Boolean>(this, "dumpMM", "dump all values used for machine learning the thresholds", false, new BooleanParameterType(), false, true);
     public GediParameter<AnalyzeType> analyzeType = new GediParameter<AnalyzeType>(this, "type", "The type of analyzis [CRNA, DRNA]", false, new EnumParameterType<>(AnalyzeType.class), true);
     public GediParameter<Double> water2xrn1FC = new GediParameter<Double>(this,"waterFC", "A fold change that XRN1 needs to exceed water on the same position", false, new DoubleParameterType(), 2., true);
-    public GediParameter<Integer> minReadNum = new GediParameter<Integer>(this,"minReadNum", "Minimum amount of reads to call a TiSS", false, new IntParameterType(), 0, true);
+
     public GediParameter<Integer> upstream = new GediParameter<Integer>(this,"upstream", "The size of the upstream window", false, new IntParameterType(), 5, true);
     public GediParameter<Integer> downstream = new GediParameter<Integer>(this,"downstream", "The size of the downstream window", false, new IntParameterType(), 5, true);
     public GediParameter<Double> countThreshold = new GediParameter<Double>(this,"countThresh", "The threshold of read-start sites inside the upstream+pos+downstream window", false, new DoubleParameterType(), 5., true);
